@@ -1,17 +1,5 @@
 const throttleHistory = Array(160).fill(0);
 const brakeHistory = Array(160).fill(0);
-const is2026 = d.game_version === "F1 26";
-
-const aeroOrDrsActive = is2026
-  ? d.aero === true || d.aero === 1
-  : d.drs === true || d.drs === 1;
-
-document.querySelector("#aeroPanel .label").textContent =
-  is2026 ? "ACTIVE AERO" : "DRS";
-
-document.getElementById("aeroPanel").classList.toggle("active", aeroOrDrsActive);
-document.getElementById("aeroText").textContent =
-  aeroOrDrsActive ? "ACTIVE" : "OFF";
 
 const rpmBar = document.getElementById("rpmBar");
 for (let i = 0; i < 24; i++) {
@@ -73,12 +61,18 @@ async function update() {
 
   document.getElementById('lapTime').textContent = d.lap_time || "--:--.---";
 
-  const drsActive = d.drs === true || d.drs === 1;
+  const is2026 = d.game_version === "F1 26";
+  const aeroActive = is2026
+    ? d.aero === true || d.aero === 1
+    : d.drs === true || d.drs === 1;
   const ersActive = d.ers === true || d.ers > 0;
   const ersPercent = d.ers_percent ?? 0;
 
-  document.getElementById('drsPanel').classList.toggle('active', drsActive);
-  document.getElementById('drsText').textContent = drsActive ? "ACTIVE" : "OFF";
+  document.querySelector("#aeroPanel .label").textContent = is2026 ? "ACTIVE AERO" : "DRS";
+  document.getElementById("aeroPanel").classList.toggle("active", aeroActive);
+  document.getElementById("aeroText").textContent = is2026
+    ? (aeroActive ? "S MODE" : "C MODE")
+    : (aeroActive ? "ACTIVE" : "OFF");
 
   document.getElementById('ersPanel').classList.toggle('active', ersActive);
   document.getElementById('ersPercent').textContent = ersPercent + "%";
@@ -106,4 +100,11 @@ async function update() {
   drawGraph(document.getElementById("brakeGraph"), brakeHistory, "#ff3030");
 }
 
-setInterval(update, 50);
+function updateSafely() {
+  update().catch((error) => {
+    console.error("Failed to update telemetry", error);
+  });
+}
+
+updateSafely();
+setInterval(updateSafely, 50);
