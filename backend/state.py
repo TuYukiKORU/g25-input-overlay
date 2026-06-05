@@ -13,6 +13,8 @@ latest = {
     "aero_distance": 0,
     "overtake_active": 0,
     "ers": 0,
+    "ers_mode": 0,
+    "boost": 0,
     "ers_percent": 0,
     "updated": 0,
     "game_version": "unknown",

@@ -93,14 +93,18 @@ def udp_loop(latest):
                 ers_deploy_mode = struct.unpack_from("<B", data, offset + 41)[0]
 
                 latest["ers_percent"] = round((ers_store_energy / 4000000) * 100)
-                latest["ers"] = 1 if ers_deploy_mode == 3 else 0
+                latest["ers_mode"] = ers_deploy_mode
+                latest["ers"] = 1 if ers_deploy_mode > 0 else 0
+                latest["boost"] = 1 if ers_deploy_mode == 3 else 0
 
             else:
                 ers_store_energy = struct.unpack_from("<f", data, offset + 37)[0]
                 ers_deploy_mode = struct.unpack_from("<B", data, offset + 41)[0]
 
                 latest["ers_percent"] = round((ers_store_energy / 4000000) * 100)
+                latest["ers_mode"] = ers_deploy_mode
                 latest["ers"] = 1 if ers_deploy_mode > 2 else 0
+                latest["boost"] = 0
 
         elif packet_id == CAR_TELEMETRY2_PACKET_ID and packet_format == 2026:
             offset = HEADER_SIZE + player_car_index * CAR_TELEMETRY2_DATA_SIZE

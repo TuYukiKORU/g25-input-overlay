@@ -14,7 +14,7 @@
       height: 100vh;
       padding: 18px;
       display: grid;
-      grid-template-rows: 1.2fr 0.9fr 1.2fr 1.3fr 1.3fr;
+      grid-template-rows: 1.2fr 1.2fr 2.6fr;
       gap: 14px;
     }
 
@@ -38,7 +38,7 @@
       border-color: #7CFF3A;
     }
 
-    .aero.active {
+    .aero.activate {
       color: #ff35b2;
       box-shadow: 0 0 30px rgba(255,53,178,0.75);
       border-color: #ff35b2;
@@ -48,6 +48,12 @@
       color: #FFD21F;
       box-shadow: 0 0 30px rgba(255,210,31,0.75);
       border-color: #FFD21F;
+    }
+
+    .ers.boost {
+      color: #28A8FF;
+      box-shadow: 0 0 30px rgba(40,168,255,0.75);
+      border-color: #28A8FF;
     }
 
     .label {
@@ -131,6 +137,16 @@
       position: absolute;
       top: 12px;
       right: 16px;
+      font-size: 24px;
+      font-weight: bold;
+    }
+
+    .graph-values {
+      position: absolute;
+      top: 12px;
+      right: 16px;
+      display: flex;
+      gap: 18px;
       font-size: 24px;
       font-weight: bold;
     }

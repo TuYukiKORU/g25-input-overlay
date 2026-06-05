@@ -42,16 +42,13 @@
       </div>
     </div>
 
-    <div class="panel graph-panel">
-      <div class="graph-title throttle-color">THROTTLE</div>
-      <div class="graph-value throttle-color"><span id="throttleValue">0</span>%</div>
-      <canvas id="throttleGraph"></canvas>
-    </div>
-
-    <div class="panel graph-panel">
-      <div class="graph-title brake-color">BRAKE</div>
-      <div class="graph-value brake-color"><span id="brakeValue">0</span>%</div>
-      <canvas id="brakeGraph"></canvas>
+    <div class="panel graph-panel input-graph">
+      <div class="graph-title">INPUT</div>
+      <div class="graph-values">
+        <span class="throttle-color">THR <span id="throttleValue">0</span>%</span>
+        <span class="brake-color">BRK <span id="brakeValue">0</span>%</span>
+      </div>
+      <canvas id="inputGraph"></canvas>
     </div>
 
   </div>
