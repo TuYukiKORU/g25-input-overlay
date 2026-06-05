@@ -1,0 +1,63 @@
+HTML = """
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/style.css">
+</head>
+
+<body>
+  <div class="dash">
+
+    <div class="top">
+      <div id="drsPanel" class="panel drs">
+        <div class="label">DRS</div>
+        <div class="big" id="drsText">OFF</div>
+      </div>
+
+      <div id="ersPanel" class="panel ers">
+        <div class="label">ERS</div>
+        <div class="big" id="ersPercent">100%</div>
+      </div>
+
+      <div class="panel lap">
+        <div class="label">LAP TIME</div>
+        <div class="time" id="lapTime">--:--.---</div>
+      </div>
+    </div>
+
+    <div class="middle">
+      <div class="panel">
+        <div class="label">SPEED</div>
+        <div><span id="speed" class="speed-value">0</span> km/h</div>
+      </div>
+
+      <div class="panel">
+        <div class="label">GEAR</div>
+        <div id="gear" class="gear-value">N</div>
+      </div>
+
+      <div class="panel">
+        <div class="label">RPM</div>
+        <div><span id="rpm" class="rpm-value">0</span></div>
+        <div id="rpmBar" class="rpm-bar"></div>
+      </div>
+    </div>
+
+    <div class="panel graph-panel">
+      <div class="graph-title throttle-color">THROTTLE</div>
+      <div class="graph-value throttle-color"><span id="throttleValue">0</span>%</div>
+      <canvas id="throttleGraph"></canvas>
+    </div>
+
+    <div class="panel graph-panel">
+      <div class="graph-title brake-color">BRAKE</div>
+      <div class="graph-value brake-color"><span id="brakeValue">0</span>%</div>
+      <canvas id="brakeGraph"></canvas>
+    </div>
+
+  </div>
+</body>
+<script src="/app.js"></script>
+</html>
+"""
