@@ -3,7 +3,11 @@ from flask import Flask, jsonify, render_template
 from state import latest
 from telemetry import udp_loop
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder="../frontend/templates",
+    static_folder="../frontend/static"
+)
 
 @app.route("/")
 def index():

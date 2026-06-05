@@ -3,8 +3,10 @@ HTML = """
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
 
 <body>
   <div class="dash">
@@ -58,6 +60,5 @@ HTML = """
 
   </div>
 </body>
-<script src="/app.js"></script>
 </html>
 """

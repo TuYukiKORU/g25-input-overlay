@@ -24,8 +24,14 @@ def udp_loop(latest):
 
         packet_format = struct.unpack_from("<H", data, 0)[0]
 
-        CAR_TELEMETRY_DATA_SIZE = 60 if packet_format == 2025 else 59
-        CAR_STATUS_DATA_SIZE = 55 if packet_format == 2025 else 59
+        if packet_format == 2025:
+            CAR_TELEMETRY_DATA_SIZE = 60
+            CAR_STATUS_DATA_SIZE = 55
+        elif packet_format == 2026:
+            CAR_TELEMETRY_DATA_SIZE = 59
+            CAR_STATUS_DATA_SIZE = 59
+        else:
+            continue
 
         packet_id = data[6]
         player_car_index = data[27]
