@@ -7,7 +7,9 @@ latest = {
     "rpm": 0,
     "lap_time": "--:--.---",
     "drs": 0,
+    "aero": 0,
     "ers": 0,
     "ers_percent": 0,
     "updated": 0,
+    "game_version": "unknown",
 }

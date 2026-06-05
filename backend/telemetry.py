@@ -27,9 +27,12 @@ def udp_loop(latest):
         if packet_format == 2025:
             CAR_TELEMETRY_DATA_SIZE = 60
             CAR_STATUS_DATA_SIZE = 55
+            is_2026 = False
+
         elif packet_format == 2026:
             CAR_TELEMETRY_DATA_SIZE = 59
             CAR_STATUS_DATA_SIZE = 59
+            is_2026 = True
         else:
             continue
 
@@ -51,7 +54,14 @@ def udp_loop(latest):
             latest["brake"] = round(brake * 100)
             latest["steer"] = round(steer, 2)
             latest["rpm"] = rpm
-            latest["drs"] = drs
+
+            if  is_2026:
+                latest["drs"] = 0
+                latest["aero"] = drs
+            else:
+                latest["drs"] = drs
+                latest["aero"] = 0
+
             latest["updated"] = time.time()
 
         elif packet_id == LAP_DATA_PACKET_ID:
@@ -64,11 +74,16 @@ def udp_loop(latest):
         elif packet_id == CAR_STATUS_PACKET_ID:
             offset = HEADER_SIZE + player_car_index * CAR_STATUS_DATA_SIZE
 
-            ers_store_energy = struct.unpack_from("<f", data, offset + 37)[0]
-            ers_deploy_mode = struct.unpack_from("<B", data, offset + 41)[0]
+            if is_2026:
+                ers_store_energy = struct.unpack_from("<f", data, offset + 37)[0]
+                ers_deploy_mode = struct.unpack_from("<B", data, offset + 41)[0]
 
-            # 最大4MJとして％表示
-            latest["ers_percent"] = round((ers_store_energy / 4000000) * 100)
+                latest["ers_percent"] = round((ers_store_energy / 4000000) * 100)
+                latest["ers"] = 1 if ers_deploy_mode == 3 else 0
 
-            # 0 = none, 1 = medium, 2 = hotlap, 3 = overtake
-            latest["ers"] = 1 if ers_deploy_mode > 2 else 0
+            else:
+                ers_store_energy = struct.unpack_from("<f", data, offset + 37)[0]
+                ers_deploy_mode = struct.unpack_from("<B", data, offset + 41)[0]
+
+                latest["ers_percent"] = round((ers_store_energy / 4000000) * 100)
+                latest["ers"] = 1 if ers_deploy_mode > 2 else 0

@@ -1,5 +1,17 @@
 const throttleHistory = Array(160).fill(0);
 const brakeHistory = Array(160).fill(0);
+const is2026 = d.game_version === "F1 26";
+
+const aeroOrDrsActive = is2026
+  ? d.aero === true || d.aero === 1
+  : d.drs === true || d.drs === 1;
+
+document.querySelector("#aeroPanel .label").textContent =
+  is2026 ? "ACTIVE AERO" : "DRS";
+
+document.getElementById("aeroPanel").classList.toggle("active", aeroOrDrsActive);
+document.getElementById("aeroText").textContent =
+  aeroOrDrsActive ? "ACTIVE" : "OFF";
 
 const rpmBar = document.getElementById("rpmBar");
 for (let i = 0; i < 24; i++) {

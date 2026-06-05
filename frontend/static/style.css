@@ -38,6 +38,12 @@
       border-color: #7CFF3A;
     }
 
+    .aero.active {
+      color: #ff35b2;
+      box-shadow: 0 0 30px rgba(255,53,178,0.75);
+      border-color: #ff35b2;
+    }
+
     .ers.active {
       color: #FFD21F;
       box-shadow: 0 0 30px rgba(255,210,31,0.75);

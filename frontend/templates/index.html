@@ -1,12 +1,8 @@
-HTML = """
-<!doctype html>
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-
-<script src="{{ url_for('static', filename='app.js') }}"></script>
 
 <body>
   <div class="dash">
@@ -15,6 +11,11 @@ HTML = """
       <div id="drsPanel" class="panel drs">
         <div class="label">DRS</div>
         <div class="big" id="drsText">OFF</div>
+      </div>
+
+      <div id="aeroPanel" class="panel aero">
+        <div class="label">S mode</div>
+        <div class="big" id="aeroText">C mode</div>
       </div>
 
       <div id="ersPanel" class="panel ers">
@@ -59,6 +60,6 @@ HTML = """
     </div>
 
   </div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
-"""
