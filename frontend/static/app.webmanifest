@@ -1,0 +1,14 @@
+{
+  "name": "F1 Telemetry Lap Analysis",
+  "short_name": "F1 Telemetry",
+  "id": "/analysis",
+  "start_url": "/analysis",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#11161a",
+  "theme_color": "#11161a",
+  "icons": [
+    {"src": "icons/app-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/app-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+  ]
+}

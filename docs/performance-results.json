@@ -1,0 +1,88 @@
+{
+  "logical_cpus": 12,
+  "physical_memory_bytes": 34281259008,
+  "method": "Source desktop + all child WebView2 processes; replay injector excluded; full 22-car packet layouts with recorded Bahrain player samples; five high-rate packet types plus three 1 Hz types; isolated UDP port.",
+  "initial_laps": 37,
+  "final_laps": 38,
+  "new_recording_bytes": 1426834,
+  "exit_code": 0,
+  "analysis_final_status": {
+    "completed_at": "2026-10-02T01:12:25.181097+00:00",
+    "current": "\u5206\u6790\u5b8c\u4e86",
+    "error": null,
+    "freshness_reason": null,
+    "progress": 100,
+    "queued_at": "2026-10-02T01:12:24.830286+00:00",
+    "stale": false,
+    "started_at": "2026-10-02T01:12:24.853304+00:00",
+    "state": "completed"
+  },
+  "date": "2026-10-02",
+  "phases": [
+    {
+      "phase": "idle",
+      "seconds": 30.31,
+      "rate_hz": 0,
+      "packets_sent": 0,
+      "cpu_mean_percent": 0.172,
+      "cpu_p95_percent": 0.769,
+      "cpu_peak_percent": 1.283,
+      "private_mean_mb": 309.1,
+      "private_peak_mb": 314.8,
+      "working_set_peak_mb": 542.6,
+      "process_count": 7
+    },
+    {
+      "phase": "recording_60hz",
+      "seconds": 30.78,
+      "rate_hz": 60,
+      "packets_sent": 9328,
+      "cpu_mean_percent": 0.174,
+      "cpu_p95_percent": 0.769,
+      "cpu_peak_percent": 1.024,
+      "private_mean_mb": 305.4,
+      "private_peak_mb": 307.3,
+      "working_set_peak_mb": 542.5,
+      "process_count": 7
+    },
+    {
+      "phase": "minimized_60hz",
+      "seconds": 30.3,
+      "rate_hz": 60,
+      "packets_sent": 9183,
+      "cpu_mean_percent": 0.159,
+      "cpu_p95_percent": 0.513,
+      "cpu_peak_percent": 1.281,
+      "private_mean_mb": 278.3,
+      "private_peak_mb": 302.5,
+      "working_set_peak_mb": 535.6,
+      "process_count": 7
+    },
+    {
+      "phase": "recording_120hz",
+      "seconds": 30.81,
+      "rate_hz": 120,
+      "packets_sent": 18583,
+      "cpu_mean_percent": 0.76,
+      "cpu_p95_percent": 2.306,
+      "cpu_peak_percent": 9.475,
+      "private_mean_mb": 317.4,
+      "private_peak_mb": 364.3,
+      "working_set_peak_mb": 575.9,
+      "process_count": 8
+    },
+    {
+      "phase": "analysis_60hz",
+      "seconds": 30.65,
+      "rate_hz": 60,
+      "packets_sent": 9288,
+      "cpu_mean_percent": 0.318,
+      "cpu_p95_percent": 1.024,
+      "cpu_peak_percent": 5.637,
+      "private_mean_mb": 366.0,
+      "private_peak_mb": 369.1,
+      "working_set_peak_mb": 585.3,
+      "process_count": 7
+    }
+  ]
+}

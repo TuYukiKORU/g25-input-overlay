@@ -1,0 +1,14 @@
+<link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='icons/app.ico') }}?v=20261002">
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/app-icon-32.png') }}?v=20261002">
+<link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/app-icon-180.png') }}?v=20261002">
+<link rel="manifest" href="{{ url_for('static', filename='app.webmanifest') }}?v=20261002">
+<meta name="theme-color" content="#11161a">
+<script>window.F1_INITIAL_LANGUAGE = {{ desktop_language|default(none)|tojson }};</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='i18n.css') }}">
+<script src="{{ url_for('static', filename='i18n_catalog.js') }}"></script>
+<script src="{{ url_for('static', filename='i18n.js') }}"></script>
+{% if desktop_mode is defined %}
+<script>window.F1_DESKTOP_MODE = {{ desktop_mode|tojson }};</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='desktop.css') }}">
+<script defer src="{{ url_for('static', filename='desktop.js') }}"></script>
+{% endif %}

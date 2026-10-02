@@ -1,0 +1,265 @@
+{
+  "schema_version": 1,
+  "direction_convention": 2,
+  "track_id": "0",
+  "track_length_m": 5272.2,
+  "course_rotation": "clockwise",
+  "corner_direction_basis": "vehicle_travel_direction",
+  "settings": {
+    "threshold": 0.0048,
+    "smoothing_m": 20.0,
+    "min_length_m": 15.0,
+    "step_m": 5.0
+  },
+  "corners": [
+    {
+      "label": "T1",
+      "start_distance": 325.8,
+      "apex_distance": 380.8,
+      "end_distance": 420.8,
+      "direction": "right",
+      "peak_curvature": 0.014339,
+      "radius_m": 69.7,
+      "complex_type": "chicane",
+      "complex_id": "C1"
+    },
+    {
+      "label": "T2",
+      "start_distance": 445.8,
+      "apex_distance": 550.8,
+      "end_distance": 565.8,
+      "direction": "left",
+      "peak_curvature": 0.009164,
+      "radius_m": 109.1,
+      "complex_type": "chicane",
+      "complex_id": "C1"
+    },
+    {
+      "label": "T3",
+      "start_distance": 1055.8,
+      "apex_distance": 1110.8,
+      "end_distance": 1165.8,
+      "direction": "right",
+      "peak_curvature": 0.028766,
+      "radius_m": 34.8,
+      "complex_type": "chicane",
+      "complex_id": "C2"
+    },
+    {
+      "label": "T4",
+      "start_distance": 1190.8,
+      "apex_distance": 1240.8,
+      "end_distance": 1320.8,
+      "direction": "left",
+      "peak_curvature": 0.016632,
+      "radius_m": 60.1,
+      "complex_type": "chicane",
+      "complex_id": "C2"
+    },
+    {
+      "label": "T5",
+      "start_distance": 1390.8,
+      "apex_distance": 1525.8,
+      "end_distance": 1540.8,
+      "direction": "right",
+      "peak_curvature": 0.010072,
+      "radius_m": 99.3
+    },
+    {
+      "label": "T6",
+      "start_distance": 1840.8,
+      "apex_distance": 1895.8,
+      "end_distance": 1945.8,
+      "direction": "right",
+      "peak_curvature": 0.011974,
+      "radius_m": 83.5,
+      "complex_type": "chicane",
+      "complex_id": "C3"
+    },
+    {
+      "label": "T7",
+      "start_distance": 1965.0,
+      "apex_distance": 1995.1,
+      "end_distance": 2040.0,
+      "direction": "left",
+      "peak_curvature": 0.0045303,
+      "radius_m": 220.7,
+      "complex_type": "chicane",
+      "complex_id": "C3"
+    },
+    {
+      "label": "T8",
+      "start_distance": 2115.8,
+      "apex_distance": 2150.8,
+      "end_distance": 2195.8,
+      "direction": "right",
+      "peak_curvature": 0.005707,
+      "radius_m": 175.2
+    },
+    {
+      "label": "T9",
+      "start_distance": 2395.0,
+      "apex_distance": 2500.1,
+      "end_distance": 2600.0,
+      "direction": "right",
+      "peak_curvature": 0.0021787,
+      "radius_m": 459
+    },
+    {
+      "label": "T10",
+      "start_distance": 2650.0,
+      "apex_distance": 2690.1,
+      "end_distance": 2720.0,
+      "direction": "left",
+      "peak_curvature": 0.0023304,
+      "radius_m": 429.1
+    },
+    {
+      "label": "T11",
+      "start_distance": 3270.8,
+      "apex_distance": 3320.8,
+      "end_distance": 3365.8,
+      "direction": "left",
+      "peak_curvature": 0.009133,
+      "radius_m": 109.5,
+      "complex_type": "chicane",
+      "complex_id": "C4"
+    },
+    {
+      "label": "T12",
+      "start_distance": 3390.8,
+      "apex_distance": 3440.8,
+      "end_distance": 3490.8,
+      "direction": "right",
+      "peak_curvature": 0.009394,
+      "radius_m": 106.4,
+      "complex_type": "chicane",
+      "complex_id": "C4"
+    },
+    {
+      "label": "T13",
+      "start_distance": 4090.8,
+      "apex_distance": 4155.8,
+      "end_distance": 4210.8,
+      "direction": "right",
+      "peak_curvature": 0.027645,
+      "radius_m": 36.2
+    },
+    {
+      "label": "T14",
+      "start_distance": 4350.8,
+      "apex_distance": 4430.8,
+      "end_distance": 4510.8,
+      "direction": "right",
+      "peak_curvature": 0.010182,
+      "radius_m": 98.2
+    },
+    {
+      "label": "T15",
+      "start_distance": 4605.8,
+      "apex_distance": 4665.8,
+      "end_distance": 4715.8,
+      "direction": "left",
+      "peak_curvature": 0.035319,
+      "radius_m": 28.3,
+      "complex_type": "chicane",
+      "complex_id": "C5"
+    },
+    {
+      "label": "T16",
+      "start_distance": 4730.8,
+      "apex_distance": 4750.8,
+      "end_distance": 4890.8,
+      "direction": "right",
+      "peak_curvature": 0.013457,
+      "radius_m": 74.3,
+      "complex_type": "chicane",
+      "complex_id": "C5"
+    }
+  ],
+  "chicanes": [
+    {
+      "id": "C1",
+      "type": "chicane",
+      "label": "T1–T2",
+      "turn_labels": [
+        "T1",
+        "T2"
+      ],
+      "directions": [
+        "right",
+        "left"
+      ],
+      "start_distance": 325.8,
+      "end_distance": 565.8,
+      "transition_gap_m": 25.0
+    },
+    {
+      "id": "C2",
+      "type": "chicane",
+      "label": "T3–T4",
+      "turn_labels": [
+        "T3",
+        "T4"
+      ],
+      "directions": [
+        "right",
+        "left"
+      ],
+      "start_distance": 1055.8,
+      "end_distance": 1320.8,
+      "transition_gap_m": 25.0
+    },
+    {
+      "id": "C3",
+      "type": "chicane",
+      "label": "T6–T7",
+      "turn_labels": [
+        "T6",
+        "T7"
+      ],
+      "directions": [
+        "right",
+        "left"
+      ],
+      "start_distance": 1840.8,
+      "end_distance": 2040.0,
+      "transition_gap_m": 19.2
+    },
+    {
+      "id": "C4",
+      "type": "chicane",
+      "label": "T11–T12",
+      "turn_labels": [
+        "T11",
+        "T12"
+      ],
+      "directions": [
+        "left",
+        "right"
+      ],
+      "start_distance": 3270.8,
+      "end_distance": 3490.8,
+      "transition_gap_m": 25.0
+    },
+    {
+      "id": "C5",
+      "type": "chicane",
+      "label": "T15–T16",
+      "turn_labels": [
+        "T15",
+        "T16"
+      ],
+      "directions": [
+        "left",
+        "right"
+      ],
+      "start_distance": 4605.8,
+      "end_distance": 4890.8,
+      "transition_gap_m": 15.0
+    }
+  ],
+  "source_session": "2026-07-25_14-53-34_session-a5c6d7df",
+  "source_lap_id": "2026-07-25_14-53-34_session-a5c6d7df/track-0-melbourne/laps/lap_016.json",
+  "updated_at": "2026-07-25T09:21:38.430542+00:00"
+}

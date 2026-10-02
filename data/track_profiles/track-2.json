@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "direction_convention": 2,
+  "track_id": "2",
+  "track_length_m": 5438.9,
+  "course_rotation": "clockwise",
+  "corner_direction_basis": "vehicle_travel_direction",
+  "settings": {
+    "threshold": 0.0066,
+    "smoothing_m": 20.0,
+    "min_length_m": 15.0,
+    "step_m": 5.0
+  },
+  "corners": [
+    {
+      "label": "T1",
+      "start_distance": 460.0,
+      "apex_distance": 530.0,
+      "end_distance": 600.0,
+      "direction": "right",
+      "peak_curvature": 0.0075066,
+      "radius_m": 133.2
+    },
+    {
+      "label": "T2",
+      "start_distance": 650.0,
+      "apex_distance": 750.0,
+      "end_distance": 810.0,
+      "direction": "left",
+      "peak_curvature": 0.0216461,
+      "radius_m": 46.2
+    },
+    {
+      "label": "T3",
+      "start_distance": 851.5,
+      "apex_distance": 896.5,
+      "end_distance": 950.0,
+      "direction": "left",
+      "peak_curvature": 0.0347413,
+      "radius_m": 28.8
+    },
+    {
+      "label": "T4",
+      "start_distance": 970.0,
+      "apex_distance": 1025.0,
+      "end_distance": 1100.0,
+      "direction": "left",
+      "peak_curvature": 0.0090555,
+      "radius_m": 110.4
+    },
+    {
+      "label": "T5",
+      "start_distance": 1260.0,
+      "apex_distance": 1350.0,
+      "end_distance": 1450.0,
+      "direction": "left",
+      "peak_curvature": 0.0022856,
+      "radius_m": 437.5
+    },
+    {
+      "label": "T6",
+      "start_distance": 1546.5,
+      "apex_distance": 1591.5,
+      "end_distance": 1661.5,
+      "direction": "right",
+      "peak_curvature": 0.043172,
+      "radius_m": 23.2
+    },
+    {
+      "label": "T7",
+      "start_distance": 1936.5,
+      "apex_distance": 2040.5,
+      "end_distance": 2201.5,
+      "direction": "left",
+      "peak_curvature": 0.0071507,
+      "radius_m": 139.8
+    },
+    {
+      "label": "T8",
+      "start_distance": 2251.5,
+      "apex_distance": 2380.5,
+      "end_distance": 2461.5,
+      "direction": "right",
+      "peak_curvature": 0.0115324,
+      "radius_m": 86.7,
+      "complex_type": "chicane",
+      "complex_id": "C1"
+    },
+    {
+      "label": "T9",
+      "start_distance": 2491.5,
+      "apex_distance": 2551.5,
+      "end_distance": 2600.0,
+      "direction": "left",
+      "peak_curvature": 0.0254449,
+      "radius_m": 39.3,
+      "complex_type": "chicane",
+      "complex_id": "C1"
+    },
+    {
+      "label": "T10",
+      "start_distance": 2610.0,
+      "apex_distance": 2660.0,
+      "end_distance": 2730.0,
+      "direction": "left",
+      "peak_curvature": 0.0122623,
+      "radius_m": 81.6
+    },
+    {
+      "label": "T11",
+      "start_distance": 3101.5,
+      "apex_distance": 3146.5,
+      "end_distance": 3181.5,
+      "direction": "left",
+      "peak_curvature": 0.032217,
+      "radius_m": 31,
+      "complex_type": "chicane",
+      "complex_id": "C2"
+    },
+    {
+      "label": "T12",
+      "start_distance": 3196.5,
+      "apex_distance": 3221.5,
+      "end_distance": 3270.0,
+      "direction": "right",
+      "peak_curvature": 0.027668,
+      "radius_m": 36.1,
+      "complex_type": "chicane",
+      "complex_id": "C2"
+    },
+    {
+      "label": "T13",
+      "start_distance": 3280.0,
+      "apex_distance": 3350.0,
+      "end_distance": 3580.0,
+      "direction": "left",
+      "peak_curvature": 0.012728,
+      "radius_m": 78.6
+    },
+    {
+      "label": "T14",
+      "start_distance": 4756.5,
+      "apex_distance": 4796.5,
+      "end_distance": 4861.5,
+      "direction": "right",
+      "peak_curvature": 0.060713,
+      "radius_m": 16.5,
+      "complex_type": "chicane",
+      "complex_id": "C3"
+    },
+    {
+      "label": "T15",
+      "start_distance": 4870.0,
+      "apex_distance": 4900.0,
+      "end_distance": 4930.0,
+      "direction": "left",
+      "peak_curvature": 0.0040162,
+      "radius_m": 249,
+      "complex_type": "chicane",
+      "complex_id": "C3"
+    },
+    {
+      "label": "T16",
+      "start_distance": 5126.5,
+      "apex_distance": 5166.5,
+      "end_distance": 5216.5,
+      "direction": "left",
+      "peak_curvature": 0.015298,
+      "radius_m": 65.4
+    }
+  ],
+  "chicanes": [
+    {
+      "id": "C1",
+      "type": "chicane",
+      "label": "T8–T9",
+      "turn_labels": [
+        "T8",
+        "T9"
+      ],
+      "directions": [
+        "right",
+        "left"
+      ],
+      "start_distance": 2251.5,
+      "end_distance": 2600.0,
+      "transition_gap_m": 30.0
+    },
+    {
+      "id": "C2",
+      "type": "chicane",
+      "label": "T11–T12",
+      "turn_labels": [
+        "T11",
+        "T12"
+      ],
+      "directions": [
+        "left",
+        "right"
+      ],
+      "start_distance": 3101.5,
+      "end_distance": 3270.0,
+      "transition_gap_m": 15.0
+    },
+    {
+      "id": "C3",
+      "type": "chicane",
+      "label": "T14–T15",
+      "turn_labels": [
+        "T14",
+        "T15"
+      ],
+      "directions": [
+        "right",
+        "left"
+      ],
+      "start_distance": 4756.5,
+      "end_distance": 4930.0,
+      "transition_gap_m": 8.5
+    }
+  ],
+  "source_session": "2026-07-30_14-00-58_session-0e92f029",
+  "source_lap_id": "2026-07-30_14-00-58_session-0e92f029/track-2-shanghai/laps/lap_005.json",
+  "updated_at": "2026-07-30T05:52:36.347099+00:00"
+}

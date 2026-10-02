@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ja">
+<head>
+{% include "_app_icons.html" %}
+
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Map &amp; Corners</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='section_experiment.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='page_nav.css') }}">
+  <style>.curvature-legend{display:flex;gap:12px;color:#87949a;font-size:.72rem}.curvature-legend span:before{content:"";display:inline-block;width:16px;height:4px;margin-right:5px;border-radius:3px;vertical-align:middle}.curvature-legend .positive:before{background:#6fe7bf}.curvature-legend .negative:before{background:#ff8a5b}.controls button.primary{border-color:#6fe7bf;background:#6fe7bf;color:#07110e;font-weight:800}.launch-progress{display:grid;gap:7px;color:#aeb8bd;font-size:.75rem}.launch-progress progress{width:100%;accent-color:#6fe7bf}#editControls,#sourceControls{display:grid;gap:12px}#editControls[hidden],#sourceControls[hidden]{display:none}.corner-list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.corner-list-heading button{padding:8px 13px;border:1px solid #6fe7bf;border-radius:7px;background:#13211e;color:#6fe7bf;font-weight:750;cursor:pointer}.corner-editor{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin:0 0 13px;padding:13px;border:1px solid #425158;border-radius:10px;background:#0b1013}.corner-editor h3,.corner-editor .editor-actions,.corner-editor .editor-error{grid-column:1/-1}.corner-editor h3{margin:0;font-size:.95rem}.corner-editor label{display:grid;gap:5px;color:#8f9ba1;font-size:.7rem}.corner-editor input,.corner-editor select{width:100%;padding:8px;border:1px solid #39454b;border-radius:6px;background:#080c0f;color:#eef3f4}.editor-actions{display:flex;justify-content:flex-end;gap:8px}.editor-actions button{padding:8px 13px;border:1px solid #46545a;border-radius:7px;background:#182126;color:#dce4e7;cursor:pointer}.editor-actions .save{border-color:#6fe7bf;background:#6fe7bf;color:#07110e}.editor-actions .delete{margin-right:auto;border-color:#ff7278;color:#ff7278}.editor-error{color:#ff7b81;font-size:.75rem}.corner .edit-corner{grid-column:2;justify-self:end;padding:4px 8px;border:1px solid #46545a;border-radius:5px;background:#182126;color:#bfc9cd;cursor:pointer}@media(max-width:700px){.corner-editor{grid-template-columns:1fr 1fr}}</style>
+</head>
+<body>
+<main>
+  <header>
+    <div><p class="eyebrow">TRACK DEFINITION · ARCHIVED</p><h1>Map &amp; Corners <span class="version-badge">Archived</span></h1><p>検証済みコースの共通T番号とコーナー範囲を表示します。</p></div>
+  </header>
+  <nav class="page-tabs"><a href="/analysis">Lap analysis</a><a href="/session-analysis">Session analysis</a><a href="/analysis/qualifying">Qualifying strategy</a><a href="/operation-library">Operation Library</a><a href="/ers-strategy">ERS Strategy</a><details class="archive-nav" open><summary>Archive</summary><div class="archive-nav-menu"><a href="/analysis/race">Race strategy <small>Multi-lap prototype</small></a><a class="active" href="/map-corners">Map &amp; Corners <small>Track definition</small></a></div></details></nav>
+  <section class="layout">
+    <aside class="card controls">
+      <h2>Verified track</h2>
+      <label>Track profile<select id="verifiedTrackSelect" aria-label="Select verified track"></select></label>
+      <div id="sourceControls" hidden><label>Session<select id="sessionSelect"></select></label><label>Track<select id="trackSelect"></select></label></div>
+      <button id="editCorners" class="primary" type="button">Edit corners</button>
+      <div id="editControls" hidden><h2>Detection settings</h2>
+      <label>Curvature threshold <output id="thresholdValue"></output><input id="threshold" type="range" min="0.0002" max="0.0200" step="0.0001" value="0.0066"></label>
+      <small>値を上げるほど緩いカーブをストレート扱いにします。</small>
+      <label>Smoothing distance <output id="smoothingValue"></output><input id="smoothing" type="range" min="0" max="60" step="5" value="20"></label>
+      <small>値を上げるほど細かな軌道ノイズを無視します。</small>
+      <label>Minimum corner length <output id="minLengthValue"></output><input id="minLength" type="range" min="5" max="100" step="5" value="15"></label>
+      <small>短い曲率ピークをコーナーから除外します。</small>
+      <button id="resetSettings" type="button">Reset settings</button>
+      </div>
+      <button id="runTurnAnalysis" class="primary" type="button" hidden>Save corners</button>
+      <div id="analysisLaunchProgress" class="launch-progress" hidden><progress id="launchProgressBar" max="100" value="0"></progress><span id="launchProgressText">Preparing analysis…</span></div>
+      <div class="method"><b>Current rule</b><span id="ruleText"></span><span id="profileStatus">Unsaved preview</span></div>
+    </aside>
+    <section class="results">
+      <article class="card overview" style="grid-template-columns:repeat(5,1fr)"><div><span>Reference lap</span><strong id="sourceLap">—</strong></div><div><span>Detected corners</span><strong id="cornerCount">—</strong></div><div><span>Track length</span><strong id="trackLength">—</strong></div><div><span>Course direction</span><strong id="courseRotation">—</strong></div><div><span>Samples</span><strong id="sampleCount">—</strong></div></article>
+      <article class="card"><div class="heading"><div><h2>Track map</h2><p>色付き区間が検出されたコーナーです。ラベル位置は曲率最大点です。</p></div><span id="selectedCorner">All corners</span></div><canvas id="trackMap"></canvas></article>
+      <article class="card"><div class="heading"><div><h2>Signed curvature by distance</h2><p>正負が回転方向を表します。上下の破線を越える連続区間をコーナーとして扱います。</p></div><div class="curvature-legend"><span class="positive">Right</span><span class="negative">Left</span></div></div><canvas id="curvatureChart"></canvas></article>
+      <article class="card"><div class="corner-list-heading"><h2>Registered corners</h2><button id="addCorner" type="button">Add corner</button></div><form id="cornerEditor" class="corner-editor" hidden><h3 id="editorTitle">Add corner</h3><label>Start distance (m)<input id="cornerStart" type="number" min="0" step="0.1" required></label><label>Apex distance (m)<input id="cornerApex" type="number" min="0" step="0.1" required></label><label>End distance (m)<input id="cornerEnd" type="number" min="0" step="0.1" required></label><label>Direction<select id="cornerDirection"><option value="left">Left</option><option value="right">Right</option></select></label><p id="editorError" class="editor-error" hidden></p><div class="editor-actions"><button id="deleteCorner" class="delete" type="button">Delete</button><button id="cancelCorner" type="button">Cancel</button><button class="save" type="submit">Save corner</button></div></form><div id="cornerList" class="corner-list"></div></article>
+      <p id="message"></p>
+    </section>
+  </section>
+</main>
+<script src="{{ url_for('static', filename='section_experiment.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "track_id": "9",
+  "track_length_m": 4376.1,
+  "settings": {
+    "threshold": 0.0066,
+    "smoothing_m": 20.0,
+    "min_length_m": 15.0,
+    "step_m": 5.0
+  },
+  "corners": [
+    {
+      "label": "T1",
+      "start_distance": 570.2,
+      "apex_distance": 625.2,
+      "end_distance": 690.2,
+      "direction": "left",
+      "peak_curvature": 0.03305,
+      "radius_m": 30.3
+    },
+    {
+      "label": "T2",
+      "start_distance": 1055.2,
+      "apex_distance": 1140.2,
+      "end_distance": 1235.2,
+      "direction": "right",
+      "peak_curvature": 0.022144,
+      "radius_m": 45.2,
+      "complex_type": "chicane",
+      "complex_id": "C1"
+    },
+    {
+      "label": "T3",
+      "start_distance": 1270.2,
+      "apex_distance": 1335.2,
+      "end_distance": 1370.2,
+      "direction": "left",
+      "peak_curvature": 0.009133,
+      "radius_m": 109.5,
+      "complex_type": "chicane",
+      "complex_id": "C1"
+    },
+    {
+      "label": "T4",
+      "start_distance": 1775.2,
+      "apex_distance": 1800.2,
+      "end_distance": 1855.2,
+      "direction": "right",
+      "peak_curvature": 0.010117,
+      "radius_m": 98.8
+    },
+    {
+      "label": "T5",
+      "start_distance": 1965.2,
+      "apex_distance": 2055.2,
+      "end_distance": 2150.2,
+      "direction": "left",
+      "peak_curvature": 0.017486,
+      "radius_m": 57.2
+    },
+    {
+      "label": "T6",
+      "start_distance": 2335.2,
+      "apex_distance": 2370.2,
+      "end_distance": 2400.2,
+      "direction": "left",
+      "peak_curvature": 0.022494,
+      "radius_m": 44.5,
+      "complex_type": "chicane",
+      "complex_id": "C2"
+    },
+    {
+      "label": "T7",
+      "start_distance": 2415.2,
+      "apex_distance": 2430.2,
+      "end_distance": 2455.2,
+      "direction": "right",
+      "peak_curvature": 0.014993,
+      "radius_m": 66.7,
+      "complex_type": "chicane",
+      "complex_id": "C2"
+    },
+    {
+      "label": "T8",
+      "start_distance": 2545.2,
+      "apex_distance": 2595.2,
+      "end_distance": 2640.2,
+      "direction": "right",
+      "peak_curvature": 0.012794,
+      "radius_m": 78.2,
+      "complex_type": "chicane",
+      "complex_id": "C3"
+    },
+    {
+      "label": "T9",
+      "start_distance": 2665.2,
+      "apex_distance": 2730.2,
+      "end_distance": 2810.2,
+      "direction": "left",
+      "peak_curvature": 0.015444,
+      "radius_m": 64.7,
+      "complex_type": "chicane",
+      "complex_id": "C3"
+    },
+    {
+      "label": "T10",
+      "start_distance": 2905.2,
+      "apex_distance": 2945.2,
+      "end_distance": 2960.2,
+      "direction": "right",
+      "peak_curvature": 0.007182,
+      "radius_m": 139.2
+    },
+    {
+      "label": "T11",
+      "start_distance": 3045.2,
+      "apex_distance": 3115.2,
+      "end_distance": 3175.2,
+      "direction": "left",
+      "peak_curvature": 0.009462,
+      "radius_m": 105.7
+    },
+    {
+      "label": "T12",
+      "start_distance": 3480.2,
+      "apex_distance": 3525.2,
+      "end_distance": 3575.2,
+      "direction": "left",
+      "peak_curvature": 0.025089,
+      "radius_m": 39.9
+    },
+    {
+      "label": "T13",
+      "start_distance": 3710.2,
+      "apex_distance": 3815.2,
+      "end_distance": 3895.2,
+      "direction": "right",
+      "peak_curvature": 0.02662,
+      "radius_m": 37.6
+    },
+    {
+      "label": "T14",
+      "start_distance": 3955.2,
+      "apex_distance": 4065.2,
+      "end_distance": 4200.2,
+      "direction": "left",
+      "peak_curvature": 0.018169,
+      "radius_m": 55
+    }
+  ],
+  "chicanes": [
+    {
+      "directions": [
+        "right",
+        "left"
+      ],
+      "end_distance": 1370.2,
+      "id": "C1",
+      "label": "T2-T3",
+      "start_distance": 1055.2,
+      "transition_gap_m": 35,
+      "turn_labels": [
+        "T2",
+        "T3"
+      ],
+      "type": "chicane"
+    },
+    {
+      "directions": [
+        "left",
+        "right"
+      ],
+      "end_distance": 2455.2,
+      "id": "C2",
+      "label": "T6-T7",
+      "start_distance": 2335.2,
+      "transition_gap_m": 15,
+      "turn_labels": [
+        "T6",
+        "T7"
+      ],
+      "type": "chicane"
+    },
+    {
+      "directions": [
+        "right",
+        "left"
+      ],
+      "end_distance": 2810.2,
+      "id": "C3",
+      "label": "T8-T9",
+      "start_distance": 2545.2,
+      "transition_gap_m": 25,
+      "turn_labels": [
+        "T8",
+        "T9"
+      ],
+      "type": "chicane"
+    }
+  ],
+  "source_session": "2026-07-24_20-02-43_session-d1576df4",
+  "source_lap_id": "2026-07-24_20-02-43_session-d1576df4/track-9-hungaroring/laps/lap_015.json",
+  "updated_at": "2026-07-24T18:16:26.262794+00:00"
+}

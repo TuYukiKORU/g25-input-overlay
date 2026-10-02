@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ja">
+<head>
+{% include "_app_icons.html" %}
+
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Operation Library</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='operation_map.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='operation_library.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='operation_integrated.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='page_nav.css') }}">
+</head>
+<body><main>
+  <header><div><p class="eyebrow">INPUT-BASED OPERATIONS</p><h1>Operation Library</h1><p>代表的なコース特性と、個別ラップの操作マップを一つの画面で確認します。</p></div><span class="experiment-badge">LIBRARY · SINGLE LAP</span></header>
+  <nav class="page-tabs"><a href="/analysis">Lap analysis</a><a href="/session-analysis">Session analysis</a><a href="/analysis/qualifying">Qualifying strategy</a><a class="active" href="/operation-library">Operation Library</a><a href="/ers-strategy">ERS Strategy</a><details class="archive-nav"><summary>Archive</summary><div class="archive-nav-menu"><a href="/analysis/race">Race strategy <small>Multi-lap prototype</small></a><a href="/map-corners">Map &amp; Corners <small>Track definition</small></a></div></details></nav>
+  <div class="view-switch"><button id="libraryView" class="active" type="button">代表マップ</button><button id="lapView" type="button">単一ラップ</button></div>
+
+  <section class="library-layout">
+    <aside class="catalogue">
+      <section id="catalogueCard" class="card catalogue-card"><div><p class="eyebrow">COURSES</p><h2>コースライブラリ</h2></div><div id="trackList" class="track-list"></div></section>
+      <section id="singleControls" class="card single-controls" hidden><div><p class="eyebrow">SINGLE LAP</p><h2>ラップ選択</h2></div><label>Session<select id="sessionSelect"></select></label><label>Track<select id="singleTrackSelect"></select></label><label>Lap<select id="lapSelect"></select></label></section>
+      <section id="librarySettings" class="card library-settings">
+        <div><p class="eyebrow">SELECTION</p><h2 id="settingsTitle">代表ラップ条件</h2></div>
+        <label>最速からの許容差 <output id="paceValue"></output><input id="paceWindow" type="range" min="0.5" max="8" step="0.5" value="3"></label>
+        <label>比較する最大周回 <output id="maxLapsValue"></output><input id="maxLaps" type="range" min="2" max="16" step="1" value="8"></label>
+        <label>最短操作区間 <output id="minimumValue"></output><input id="minimumSection" type="range" min="10" max="100" step="5" value="20"></label>
+        <button id="resetSettings" type="button">標準条件に戻す</button>
+        <div id="selectionNote" class="rule-note"><b>採用条件</b><span>有効 · ピットなし · 最速との時間差内</span><small>各地点をコース進捗で揃え、多数決で代表操作を決定します。合意率が低い箇所はドライバー操作のばらつきが大きい地点です。</small></div>
+      </section>
+    </aside>
+
+    <section class="library-content">
+      <section class="library-title"><div><p class="eyebrow" id="qualityLabel">SELECT A COURSE</p><h2 id="trackTitle">コースを選択</h2></div><p id="methodText"></p></section>
+      <section class="summary library-summary">
+        <article class="card"><span>Best lap</span><strong id="bestTime">—</strong></article>
+        <article class="card"><span>Compared laps</span><strong id="lapCount">—</strong></article>
+        <article class="card"><span>Overall consensus</span><strong id="consensus">—</strong></article>
+        <article class="card"><span>Operation sections</span><strong id="sectionCount">—</strong></article>
+      </section>
+      <section class="library-visuals">
+        <article class="card map-card"><div class="heading"><div><h2 id="mapTitle">代表操作マップ</h2><p id="mapDescription">色は代表操作、線の濃さはラップ間の合意率です。</p></div><strong id="selectedSection">全区間</strong></div><canvas id="trackMap"></canvas><div id="legend" class="legend"></div></article>
+        <article class="card chart-card"><div class="heading"><div><h2 id="chartTitle">代表速度・入力</h2><p id="chartDescription">白帯が採用ラップの速度幅、白線が中央値です。</p></div></div><canvas id="inputChart"></canvas><div class="chart-legend"><span class="speed">Speed</span><span id="speedBandLegend" class="speed-band">Speed range</span><span class="throttle">Throttle</span><span class="brake">Brake</span></div></article>
+      </section>
+      <section class="card source-card"><div class="heading"><div><h2 id="sourceTitle">採用ラップ</h2><p id="sourceDescription">速い順。異なるセッションのラップも同じコースとして集約します。</p></div></div><div id="sourceLaps" class="source-laps"></div></section>
+      <section class="card section-card"><div class="heading"><div><h2 id="sectionsTitle">代表区間</h2><p id="sectionsDescription">合意率と速度幅から、安定した操作点と検討余地のある地点を区別できます。</p></div></div><div id="sectionList" class="section-list"></div></section>
+      <p id="message"></p>
+    </section>
+  </section>
+</main><script src="{{ url_for('static', filename='operation_library.js') }}"></script></body>
+</html>

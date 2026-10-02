@@ -1,0 +1,7 @@
+.view-switch{display:flex;gap:5px;width:max-content;margin:0 0 13px;padding:4px;border:1px solid #2b373d;border-radius:10px;background:#0d1215}
+.view-switch button{padding:9px 18px;border:0;border-radius:7px;background:transparent;color:#849198;font-weight:800;cursor:pointer}
+.view-switch button.active{background:#6fe7bf;color:#07110e}
+.single-controls{display:grid;gap:12px}
+.single-controls label{display:grid;gap:5px;color:#aeb9bd;font-size:.72rem}
+.single-controls select{width:100%;padding:9px;border:1px solid #3a474d;border-radius:7px;background:#090d10;color:#edf3f4}
+.single-controls[hidden],#catalogueCard[hidden]{display:none}

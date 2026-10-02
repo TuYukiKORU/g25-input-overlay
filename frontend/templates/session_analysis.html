@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+<head>
+{% include "_app_icons.html" %}
+
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Session analysis</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='session_analysis.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='page_nav.css') }}">
+</head>
+<body><main>
+  <header><div><p class="eyebrow">SESSION ANALYSIS</p><h1>Session analysis</h1><p>Compare corner performance using your saved turn definitions.</p></div></header>
+  <nav class="page-tabs"><a href="/analysis">Lap analysis</a><a class="active" href="/session-analysis">Session analysis</a><a href="/analysis/qualifying">Qualifying strategy</a><a href="/operation-library">Operation Library</a><a href="/ers-strategy">ERS Strategy</a><details class="archive-nav"><summary>Archive</summary><div class="archive-nav-menu"><a href="/analysis/race">Race strategy <small>Multi-lap prototype</small></a><a href="/map-corners">Map &amp; Corners <small>Track definition</small></a></div></details></nav>
+  <section class="card analysis-selectors">
+    <label>Session<select id="sessionSelect" aria-label="Select session"></select></label>
+    <label>Track<select id="trackSelect" aria-label="Select track"></select></label>
+    <label class="lap-field">Analysis lap<select id="lapSelect" aria-label="Select analysis lap"></select></label>
+  </section>
+  <section class="card launch-card">
+    <div><span id="profileBadge" class="badge">Checking</span><h2 id="profileTitle">Corner registration</h2><p id="profileText">コーナー定義を確認しています…</p></div>
+    <button id="analyzeButton" type="button">Analyze session</button>
+  </section>
+  <section id="launchStatus" class="card status" hidden><progress id="launchProgress" max="100" value="0"></progress><span id="launchText"></span></section>
+  <p id="message"></p>
+</main><script src="{{ url_for('static', filename='session_context.js') }}"></script><script src="{{ url_for('static', filename='session_analysis.js') }}"></script></body>
+</html>

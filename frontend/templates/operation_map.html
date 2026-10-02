@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+<head>
+{% include "_app_icons.html" %}
+
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Operation Map (Experimental)</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='operation_map.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='page_nav.css') }}">
+</head>
+<body><main>
+  <header>
+    <div><p class="eyebrow">EXPERIMENTAL · INPUT-BASED</p><h1>Operation Map</h1><p>ターン番号ではなく、実際のペダル操作と速度変化からラップを実用的な区間に分けます。</p></div>
+    <span class="experiment-badge">簡易アルゴリズム</span>
+  </header>
+  <nav class="page-tabs"><a href="/analysis">Overview</a><a href="/session-analysis">Analysis</a><a href="/map-corners">Map &amp; Corners</a><a class="active" href="/operation-map">Operation Map</a><a href="/operation-library">Library</a><a href="/ers-strategy">ERS Strategy</a></nav>
+
+  <section class="card selectors">
+    <label>Session<select id="sessionSelect"></select></label>
+    <label>Track<select id="trackSelect"></select></label>
+    <label>Lap<select id="lapSelect"></select></label>
+  </section>
+
+  <section class="summary" id="summary">
+    <article class="card"><span>Lap time</span><strong id="lapTime">—</strong></article>
+    <article class="card"><span>区間数</span><strong id="sectionCount">—</strong></article>
+    <article class="card"><span>Track length</span><strong id="trackLength">—</strong></article>
+    <article class="card"><span>判定刻み</span><strong id="sampleStep">—</strong></article>
+  </section>
+
+  <section class="workspace">
+    <aside class="card settings">
+      <div><p class="eyebrow">TUNING</p><h2>判定設定</h2></div>
+      <label>ブレーキ判定 <output id="brakingValue"></output><input id="brakingThreshold" type="range" min="0.01" max="0.30" step="0.01" value="0.05"></label>
+      <label>フラット判定 <output id="flatValue"></output><input id="flatThreshold" type="range" min="0.70" max="1.00" step="0.01" value="0.95"></label>
+      <label>リフト判定 <output id="liftValue"></output><input id="liftThreshold" type="range" min="0" max="0.50" step="0.01" value="0.20"></label>
+      <label>最短区間 <output id="minimumValue"></output><input id="minimumSection" type="range" min="5" max="100" step="5" value="20"></label>
+      <label>入力平滑化 <output id="smoothingValue"></output><input id="smoothing" type="range" min="0" max="60" step="5" value="15"></label>
+      <button id="resetSettings" type="button">初期値に戻す</button>
+      <div class="rule-note"><b>分類の優先順位</b><span>減速 → フラットアウト → リフト → 加速</span><small>短い入力の揺れは前後の区間へ結合します。保存データやターン設定は変更しません。</small></div>
+    </aside>
+
+    <section class="results">
+      <article class="card map-card">
+        <div class="heading"><div><h2>操作区間マップ</h2><p>線をクリックすると、その地点の区間を選択できます。</p></div><strong id="selectedSection">全区間</strong></div>
+        <canvas id="trackMap"></canvas>
+        <div id="legend" class="legend"></div>
+      </article>
+      <article class="card chart-card">
+        <div class="heading"><div><h2>入力・速度プロファイル</h2><p>背景色はマップと同じ操作区間です。</p></div></div>
+        <canvas id="inputChart"></canvas>
+        <div class="chart-legend"><span class="speed">Speed</span><span class="throttle">Throttle</span><span class="brake">Brake</span></div>
+      </article>
+    </section>
+  </section>
+
+  <section class="card section-card">
+    <div class="heading"><div><h2>検出区間</h2><p>距離・時間・入口出口速度を、タイムに関わる操作単位で確認できます。</p></div></div>
+    <div id="sectionList" class="section-list"></div>
+  </section>
+  <p id="message"></p>
+</main><script src="{{ url_for('static', filename='operation_map.js') }}"></script></body>
+</html>

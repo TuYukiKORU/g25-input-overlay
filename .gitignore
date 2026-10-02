@@ -1,2 +1,24 @@
 __pycache__/
 *.py[cod]
+.build-venv/
+.build-assets/
+build/
+dist/
+releases/
+.runtime/
+.runtime-deps/
+.pytest_cache/
+.venv/
+data/sessions/
+artifacts/
+
+# Local diagnostics, generated documents, and machine-specific shortcuts.
+/output/
+/tmp/
+/*.lnk
+/1
+
+# Local credentials and environment overrides.
+.env
+.env.*
+!.env.example
