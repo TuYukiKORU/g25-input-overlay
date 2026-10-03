@@ -123,15 +123,7 @@ function inputPercent(sample, key) {
 }
 
 function samplesWithAcceleration(value) {
-  const points = graphSamples(value).filter(point => Number.isFinite(Number(point.speed)));
-  return points.map((point, index) => {
-    const recorded = Number(point.longitudinal_g);
-    if (point.longitudinal_g != null && Number.isFinite(recorded)) return {...point, acceleration_g: recorded};
-    const before = points[Math.max(0, index - 2)], after = points[Math.min(points.length - 1, index + 2)];
-    const elapsed = (Number(after.lap_time_ms) - Number(before.lap_time_ms)) / 1000;
-    const derived = elapsed > 0 ? ((Number(after.speed) - Number(before.speed)) / 3.6) / elapsed / 9.80665 : 0;
-    return {...point, acceleration_g: Math.max(-6, Math.min(6, derived))};
-  });
+  return TelemetryMotion.accelerationSeries(graphSamples(value), value?.samples || []);
 }
 
 function drawSpeedChart() {
@@ -239,10 +231,12 @@ function drawMetricHover(ctx, width, x, top, bottomY, values, boxWidth = 190) {
 }
 
 function drawAccelerationChart() {
+  const selectedSeries = samplesWithAcceleration(lap), comparisonSeries = samplesWithAcceleration(reference);
+  $("accelerationNotice").hidden = !(selectedSeries.estimated || comparisonSeries.estimated);
   $("accelerationChart").style.height = innerWidth <= 700 ? "250px" : "270px";
   canvas("accelerationChart", (ctx, width, height) => {
-    const selected = samplesWithAcceleration(lap);
-    const fastest = samplesWithAcceleration(reference);
+    const selected = selectedSeries.samples;
+    const fastest = comparisonSeries.samples;
     if (!selected.length) return;
     const all = [...selected, ...fastest], end = Math.max(...all.map(point => Number(point.lap_distance)), 1);
     const selectedBattery = selected.filter(point => point.ers_percent != null && Number.isFinite(Number(point.ers_percent)));
@@ -373,10 +367,24 @@ function drawInputChart() {
 }
 
 function drawTrackMap() {
+  const positionSamples = value => graphSamples(value).filter(point =>
+    point.position?.x != null && point.position?.z != null &&
+    Number.isFinite(Number(point.position.x)) && Number.isFinite(Number(point.position.z)));
+  const selected = positionSamples(lap), comparisonPositions = positionSamples(reference);
+  const selectedUsable = TelemetryMotion.hasDrivingPath(selected);
+  const compared = TelemetryMotion.hasDrivingPath(comparisonPositions) ? comparisonPositions : [];
+  trackHitPoints = [];
+  $("trackMapNotice").hidden = selectedUsable && (!reference || compared.length > 0);
+  $("trackMapNotice").textContent = selectedUsable
+    ? 'Comparison lap has no usable position data.'
+    : TelemetryMotion.hasDrivingPath(lap?.samples || [])
+      ? 'No usable position data in the selected range.'
+      : 'No usable position data was recorded for this lap. The racing line cannot be reconstructed.';
+  $("trackMap").hidden = !selectedUsable;
+  $("trackMapLegend").hidden = !selectedUsable;
+  if (!selectedUsable) return;
   $("trackMap").style.height = innerWidth <= 700 ? "280px" : "300px";
   canvas("trackMap", (ctx, width, height) => {
-    const selected = graphSamples(lap).filter(x => x.position?.x != null && x.position?.z != null);
-    const compared = graphSamples(reference).filter(x => x.position?.x != null && x.position?.z != null);
     const base = selected;
     const all = [...selected, ...compared]; if (!selected.length) return;
     const meanX = all.reduce((sum, sample) => sum + sample.position.x, 0) / all.length;

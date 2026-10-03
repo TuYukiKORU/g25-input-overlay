@@ -2,6 +2,13 @@
 
 このファイルには、F1テレメトリー分析ツールへ加えた主な変更を記録します。
 
+## 2026-10-03
+
+- Fixed 2026 Motion decoding to use 54-byte car records and signed longitudinal G scaled by 1000, while preserving the 2025 wire layout.
+- Reset motion fields between sessions and reject truncated/nonfinite motion records.
+- Show speed-derived acceleration estimates for older laps with unusable all-zero motion data; clearly mark estimates without changing saved telemetry.
+- Explain unavailable racing lines instead of displaying a collapsed map, and ignore unusable comparison paths.
+
 ## 2026-10-02
 
 - Reviewed and packaged 0.3.1-laptop-preview: 131 tests and two actual EXE launches from Japanese paths, with restart persistence, analysis jobs, duplicate-window and UDP conflict checks.

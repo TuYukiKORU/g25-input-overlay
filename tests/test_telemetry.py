@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 import struct
+import pytest
 from telemetry import (CAR_DAMAGE_DATA_SIZE, CAR_SETUP_FIELDS, CAR_SETUP_STRUCT,
                        CAR_TELEMETRY2_STRUCT, HEADER_SIZE,
                        LEGACY_2026_F1_TEAM_IDS, PARTICIPANT_DATA_SIZE_2025,
@@ -11,6 +12,7 @@ from telemetry import (CAR_DAMAGE_DATA_SIZE, CAR_SETUP_FIELDS, CAR_SETUP_STRUCT,
                        parse_car_telemetry2, parse_participants_summary, parse_session_identity,
                        packet_indicates_season_pack, season_pack_packet_evidence,
                        ers_activity_for_wire_mode,
+                       parse_car_motion,
                        telemetry_mode, tyre_compound_name)
 
 
@@ -28,8 +30,85 @@ def test_current_car_damage_record_size_includes_tyre_blisters():
     assert CAR_DAMAGE_DATA_SIZE == 46
 
 
-def test_motion_longitudinal_g_uses_official_car_motion_offset():
-    assert MOTION_LONGITUDINAL_G_OFFSET == 40
+@pytest.mark.parametrize("wire_format,index", [(2025, 1), (2025, 21), (2026, 0), (2026, 3), (2026, 23)])
+@pytest.mark.parametrize("longitudinal", [-4.375, 0, 1.525])
+def test_motion_decodes_player_position_and_signed_acceleration(wire_format, index, longitudinal):
+    size, cars = (54, 24) if wire_format == 2026 else (60, 22)
+    packet = bytearray(HEADER_SIZE + size * cars)
+    offset = HEADER_SIZE + index * size
+    struct.pack_into("<3f", packet, offset, 125.5, 12.0, -834.25)
+    if wire_format == 2026:
+        struct.pack_into("<3h", packet, offset + 36, 1500, round(longitudinal * 1000), -900)
+    else:
+        struct.pack_into("<3f", packet, offset + 36, 1.5, longitudinal, -.9)
+    result = parse_car_motion(packet, index, wire_format)
+    assert result["world_position_x"] == 125.5
+    assert result["world_position_z"] == -834.25
+    assert result["longitudinal_g"] == pytest.approx(longitudinal)
+
+
+@pytest.mark.parametrize("wire_format,size", [(2025, 60), (2026, 54)])
+def test_motion_rejects_truncated_player_record_and_invalid_index(wire_format, size):
+    packet = bytearray(HEADER_SIZE + size * 2 - 1)
+    assert parse_car_motion(packet, 1, wire_format) is None
+    assert parse_car_motion(packet, -1, wire_format) is None
+    assert parse_car_motion(packet, 255, wire_format) is None
+
+
+def test_motion_rejects_nonfinite_position():
+    packet = bytearray(HEADER_SIZE + 54)
+    struct.pack_into("<f", packet, HEADER_SIZE, float("nan"))
+    assert parse_car_motion(packet, 0, 2026) is None
+
+
+@pytest.mark.parametrize("wire_format,game_year,index", [(2025, 26, 21), (2026, 25, 23)])
+def test_udp_motion_reaches_saved_lap_for_both_season_pack_wire_layouts(monkeypatch, wire_format, game_year, index):
+    from types import SimpleNamespace
+    import telemetry
+    from lap_recorder import LapRecorder
+    from test_recorder import MemoryStorage, state
+
+    motion_size, cars = (54, 24) if wire_format == 2026 else (60, 22)
+    def packet(packet_id, size):
+        data = bytearray(HEADER_SIZE + size * cars)
+        struct.pack_into("<H", data, 0, wire_format)
+        data[2], data[6], data[27] = game_year, packet_id, index
+        struct.pack_into("<Q", data, 7, 1)
+        return data
+
+    packets = []
+    for distance in range(0, 2100, 100):
+        motion = packet(0, motion_size)
+        offset = HEADER_SIZE + index * motion_size
+        struct.pack_into("<3f", motion, offset, distance + 125.5, 12, -834.25)
+        if wire_format == 2026:
+            struct.pack_into("<h", motion, offset + 38, -2750)
+        else:
+            struct.pack_into("<f", motion, offset + 40, -2.75)
+        timing = packet(2, 57)
+        offset = HEADER_SIZE + index * 57
+        struct.pack_into("<II", timing, offset, 42000, distance * 20)
+        struct.pack_into("<f", timing, offset + 20, distance)
+        timing[offset + 33] = 1
+        packets.extend([motion, timing])
+    finish = packet(2, 57)
+    offset = HEADER_SIZE + index * 57
+    struct.pack_into("<II", finish, offset, 42000, 1000)
+    finish[offset + 33] = 2
+    packets.append(finish)
+    incoming = iter([*packets, None])
+    monkeypatch.setattr(telemetry, "_receive_packet", lambda *args: next(incoming))
+    received = []
+    monkeypatch.setattr(telemetry, "recording_health", SimpleNamespace(received=lambda *args: received.append(args)))
+    storage = MemoryStorage()
+    recorder = LapRecorder(storage)
+    telemetry.udp_loop(state(1, 0, 0), recorder, sock=SimpleNamespace(close=lambda: None))
+    assert recorder.flush(2)
+    samples = storage.laps[0]["samples"]
+    assert samples[0]["position"] == {"x": 125.5, "z": -834.25}
+    assert samples[-1]["position"]["x"] == 2125.5
+    assert all(sample["longitudinal_g"] == -2.75 for sample in samples)
+    assert (0, 1) in received
 
 
 def test_game_year_selects_2026_season_pack_even_with_2025_packet_format():

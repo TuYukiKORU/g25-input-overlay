@@ -20,3 +20,4 @@
 @media(max-width:900px){.lap-summary-row{grid-template-columns:repeat(2,minmax(0,1fr))}.fastest-lap-box{grid-column:1/-1}}
 @media(max-width:600px){.lap-summary-row{grid-template-columns:1fr}}
 .recording-health [data-state=save-error]{color:#ff7b81;font-weight:700}
+#trackMap[hidden], #trackMapLegend[hidden] { display: none; }

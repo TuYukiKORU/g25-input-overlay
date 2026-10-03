@@ -343,6 +343,11 @@ window.F1_TRANSLATIONS = {pairs: [
   ['File','ファイル'],['Fastest lap','最速ラップ'],['Open my recordings','自分の走行を記録'],['Open test laps','過去ラップで試す'],
   ['Open recordings folder','記録フォルダーを開く'],['Open logs folder','ログフォルダーを開く'],['Exit','終了'],
   ['Could not open the desktop action.','デスクトップ操作を実行できませんでした。']
+,
+  ['Acceleration includes speed-based estimates; recorded motion data is unavailable.','記録されたモーションデータが利用できないため、加速度には速度からの推定値を含みます。'],
+  ['No usable position data was recorded for this lap. The racing line cannot be reconstructed.','このラップには利用可能な位置データが記録されていないため、走行ラインを復元できません。'],
+  ['No usable position data in the selected range.','選択した区間に利用可能な位置データがありません。'],
+  ['Comparison lap has no usable position data.','比較ラップには利用可能な位置データがありません。']
 ], dynamic: {
   en: [
     ['^Lap (.+)を入力と速度変化から分類。$', 'Lap $1 classified from inputs and speed changes.'],

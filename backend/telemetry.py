@@ -1,5 +1,6 @@
 import socket
 import struct
+import math
 from recording_health import recording_health
 
 PORT = 20777
@@ -24,6 +25,9 @@ CAR_SETUP_STRUCT = struct.Struct("<BBBBffffBBBBBBBBBffffBf")
 SESSION_PACKET_ID = 1
 MOTION_PACKET_ID = 0
 MOTION_LONGITUDINAL_G_OFFSET = 40
+MOTION_DATA_SIZE_2025 = 60
+MOTION_DATA_SIZE_2026 = 54
+MOTION_LONGITUDINAL_G_OFFSET_2026 = 38
 MOTION_EX_PACKET_ID = 13
 CAR_DAMAGE_PACKET_ID = 10
 CAR_DAMAGE_DATA_SIZE = 46
@@ -60,6 +64,32 @@ def tyre_compound_name(actual, visual):
 
 def has_bytes(data, offset, size):
     return offset >= 0 and len(data) >= offset + size
+
+def parse_car_motion(data, player_car_index, raw_packet_format):
+    """Decode the selected wire layout, independently of detected car edition.
+
+    EA's 2026 layout uses signed int16 G values scaled by 1000, shrinking
+    each car record from 60 to 54 bytes. Legacy 2025 UDP still uses floats.
+    """
+    if raw_packet_format == 2026:
+        size, max_cars = MOTION_DATA_SIZE_2026, 24
+    elif raw_packet_format == 2025:
+        size, max_cars = MOTION_DATA_SIZE_2025, 22
+    else:
+        return None
+    if not 0 <= player_car_index < max_cars:
+        return None
+    offset = HEADER_SIZE + player_car_index * size
+    if not has_bytes(data, offset, size):
+        return None
+    x, _, z = struct.unpack_from("<3f", data, offset)
+    if raw_packet_format == 2026:
+        longitudinal = struct.unpack_from("<h", data, offset + MOTION_LONGITUDINAL_G_OFFSET_2026)[0] / 1000.0
+    else:
+        longitudinal = struct.unpack_from("<f", data, offset + MOTION_LONGITUDINAL_G_OFFSET)[0]
+    if not all(math.isfinite(value) for value in (x, z, longitudinal)):
+        return None
+    return {"world_position_x": x, "world_position_z": z, "longitudinal_g": longitudinal}
 
 def parse_car_setup(data, player_car_index):
     """Decode only the player's compact 50-byte setup record."""
@@ -202,6 +232,9 @@ def udp_loop(latest, recorder=None, sock=None, stop_event=None):
         raw_game_year = data[2]
         incoming_session_uid = struct.unpack_from("<Q", data, 7)[0]
         if latest.get("session_uid") != incoming_session_uid:
+            latest["world_position_x"] = None
+            latest["world_position_z"] = None
+            latest["longitudinal_g"] = None
             latest["track_id"] = None
             latest["session_type"] = None
             latest["game_mode"] = None
@@ -314,11 +347,10 @@ def udp_loop(latest, recorder=None, sock=None, stop_event=None):
             latest["current_lap_time_ms"] = current_lap_time_ms
 
         elif packet_id == MOTION_PACKET_ID:
-            offset = HEADER_SIZE + player_car_index * 60
-            if has_bytes(data, offset, 12):
-                latest["world_position_x"], _, latest["world_position_z"] = struct.unpack_from("<3f", data, offset)
-            if has_bytes(data, offset + MOTION_LONGITUDINAL_G_OFFSET, 4):
-                latest["longitudinal_g"] = struct.unpack_from("<f", data, offset + MOTION_LONGITUDINAL_G_OFFSET)[0]
+            motion = parse_car_motion(data, player_car_index, raw_packet_format)
+            if motion is None:
+                continue
+            latest.update(motion)
 
         elif packet_id == MOTION_EX_PACKET_ID:
             # PacketMotionEx: suspension position/velocity/acceleration, then wheel speed and slip ratio.
@@ -391,7 +423,8 @@ def udp_loop(latest, recorder=None, sock=None, stop_event=None):
             latest["telemetry2_received"] = True
 
         health_sizes = {
-            MOTION_PACKET_ID: HEADER_SIZE + player_car_index * 60 + MOTION_LONGITUDINAL_G_OFFSET + 4,
+            MOTION_PACKET_ID: HEADER_SIZE + (player_car_index + 1) * (
+                MOTION_DATA_SIZE_2026 if raw_packet_format == 2026 else MOTION_DATA_SIZE_2025),
             SESSION_PACKET_ID: HEADER_SIZE + SESSION_GAME_MODE_OFFSET + 1,
             LAP_DATA_PACKET_ID: HEADER_SIZE + player_car_index * LAP_DATA_SIZE_CURRENT + 38,
             CAR_SETUPS_PACKET_ID: HEADER_SIZE + player_car_index * CAR_SETUP_STRUCT.size + CAR_SETUP_STRUCT.size,
