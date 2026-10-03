@@ -1,5 +1,7 @@
 """Shared telemetry state used only to build analysis lap samples."""
-latest = {
+import copy
+
+DEFAULT_TELEMETRY_STATE = {
     "speed": 0, "throttle_raw": 0.0, "brake_raw": 0.0,
     "current_lap_time_ms": 0,
     "last_lap_time_ms": 0, "lap_number": 0, "lap_distance": None,
@@ -9,12 +11,14 @@ latest = {
     "wheel_speed": [None] * 4, "wheel_slip_ratio": [None] * 4,
     "tyres_wear": [None] * 4, "tyre_compound": "Unknown", "tyres_age_laps": None,
     "track_id": None, "session_type": None, "game_mode": None, "session_uid": None,
+    "formula": None, "player_car_index": None,
     "season_link_identifier": None, "weekend_link_identifier": None,
     "session_link_identifier": None,
     "packet_format": None, "game_year": None,
     "raw_packet_format": None, "raw_game_year": None,
     "edition_detection": "unknown", "udp_configuration_warning": None,
     "season_pack_detected": False, "season_pack_detection": None,
+    "f1_25_detected": False,
     "num_active_cars": None, "participant_team_ids": [],
     "pit_status": 0, "lap_invalid": False, "paused": False,
     "drs": 0, "aero": 0, "aero_mode": 0,
@@ -28,3 +32,4 @@ latest = {
     "game_version": "unknown",
     "car_setup": None,
 }
+latest = copy.deepcopy(DEFAULT_TELEMETRY_STATE)

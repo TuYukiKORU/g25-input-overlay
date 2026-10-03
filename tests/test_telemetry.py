@@ -99,7 +99,8 @@ def test_udp_motion_reaches_saved_lap_for_both_season_pack_wire_layouts(monkeypa
     incoming = iter([*packets, None])
     monkeypatch.setattr(telemetry, "_receive_packet", lambda *args: next(incoming))
     received = []
-    monkeypatch.setattr(telemetry, "recording_health", SimpleNamespace(received=lambda *args: received.append(args)))
+    monkeypatch.setattr(telemetry, "recording_health", SimpleNamespace(
+        received=lambda *args: received.append(args), reset=lambda _: None))
     storage = MemoryStorage()
     recorder = LapRecorder(storage)
     telemetry.udp_loop(state(1, 0, 0), recorder, sock=SimpleNamespace(close=lambda: None))

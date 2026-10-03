@@ -141,6 +141,16 @@ def test_legacy_udp_is_recorded_as_unconfirmed_instead_of_certain_2025_content()
     assert rec.current["sourcePacketFormat"] == 2025
     assert rec.current["udpConfigurationWarning"] == "Select 2026 UDP"
 
+def test_in_progress_f1_25_lap_updates_when_identification_arrives_late():
+    rec=LapRecorder(MemoryStorage()); value=state(1,0,0)
+    value.update(edition_detection="legacy_udp_unconfirmed", udp_configuration_warning="Waiting")
+    rec.observe(value)
+    value=state(1,100,100); value.update(edition_detection="session_formula_2025", formula=0)
+    rec.observe(value)
+    assert rec.current["editionDetection"] == "session_formula_2025"
+    assert rec.current["udpConfigurationWarning"] is None
+    assert rec.current["formula"] == 0
+
 def test_samples_only_store_analysis_inputs():
     rec=LapRecorder(MemoryStorage()); rec.observe(state(1,0,0))
     sample=rec.current["samples"][0]

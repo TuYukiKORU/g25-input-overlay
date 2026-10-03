@@ -76,6 +76,7 @@ def create_analysis_blueprint(storage, worker, latest):
                 "ers_store_energy_j", "fuel_in_tank_kg", "fuel_remaining_laps",
                 "tyres_age_laps", "tyres_wear", "tyre_compound", "game_version",
                 "raw_packet_format", "raw_game_year", "edition_detection",
+                "formula", "player_car_index",
                 "season_pack_detection", "num_active_cars", "participant_team_ids",
                 "aero_mode", "active_aero_available", "active_aero_activation_distance",
                 "boost_active", "overtake_available", "overtake_active",

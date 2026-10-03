@@ -1,5 +1,9 @@
 /* English/Japanese display phrases. Never translate stored telemetry or API keys. */
 window.F1_TRANSLATIONS = {pairs: [
+  ['Waiting for game','ゲームの開始を待っています'],
+  ['Participants / season detection','参加車両 / シーズン判別'],
+  ['Detecting F1 25 / 2026 Season Pack','F1 25 / 2026 Season Packを自動判別中'],
+  ['Waiting for Session or Participants packets to identify F1 25 versus the 2026 Season Pack automatically. The F1 25 UDP header alone is ambiguous.','SessionまたはParticipantsパケットを待ち、F1 25と2026 Season Packを自動判別します。F1 25のUDPヘッダーだけでは判別できません。'],
   ['At least two comparable valid F1 26 laps are required.','F1 26の比較可能な有効ラップが2周以上必要です'],
   ['Recording: save error','記録：保存エラー'],
   ['Some lap saves failed. Check free disk space and folder permissions, then open the logs folder for details.','ラップの保存に失敗しました。空き容量と保存先のアクセス権を確認し、ログフォルダーで詳細を確認してください。'],

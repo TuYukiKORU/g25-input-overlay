@@ -11,7 +11,7 @@ from analysis_freshness import rules_signature
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--version", default="0.3.1-laptop-preview")
+    parser.add_argument("--version", default="0.3.2-udp-preview")
     args = parser.parse_args()
     destination = ROOT / ".build-assets" / "build-info.json"
     destination.parent.mkdir(exist_ok=True)

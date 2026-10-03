@@ -4,6 +4,7 @@ import time
 
 
 PACKETS = {0: ("Motion", 2), 1: ("Session", 5), 2: ("Lap timing", 2),
+           4: ("Participants / season detection", 5),
            5: ("Setup", 10), 6: ("Controls", 2), 7: ("Fuel / tyres / ERS", 3),
            10: ("Tyre wear", 5), 13: ("Wheel slip", 2), 16: ("2026 aero / boost", 2)}
 
@@ -14,6 +15,11 @@ class RecordingHealth:
         self.session = None
         self.receipts = {}
         self.lock = threading.Lock()
+
+    def reset(self, session_uid):
+        with self.lock:
+            self.receipts.clear()
+            self.session = session_uid
 
     def received(self, packet_id, session_uid):
         if packet_id not in PACKETS:

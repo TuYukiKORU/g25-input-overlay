@@ -89,5 +89,5 @@ def package(version):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--version", default="0.3.1-laptop-preview")
+    parser.add_argument("--version", default="0.3.2-udp-preview")
     package(parser.parse_args().version)

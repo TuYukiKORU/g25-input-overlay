@@ -1,6 +1,8 @@
 import socket
 import struct
 import math
+import copy
+from state import DEFAULT_TELEMETRY_STATE
 from recording_health import recording_health
 
 PORT = 20777
@@ -17,6 +19,11 @@ MAX_CARS_2025 = 22
 # layout m_teamId is uint8, so their low-byte representations are 220..230.
 LEGACY_2026_F1_TEAM_IDS = frozenset(range(220, 231))
 F1_2026_TEAM_IDS = frozenset(range(476, 487))
+# Season 8 adds 2026 F2 teams 489..499. Their legacy low bytes do not
+# overlap the original F1 25 team table (F1 0..9; F2 158..168).
+SEASON_2026_TEAM_IDS = F1_2026_TEAM_IDS | frozenset(range(489, 500))
+LEGACY_SEASON_2026_TEAM_IDS = frozenset(team % 256 for team in SEASON_2026_TEAM_IDS)
+F1_2025_TEAM_IDS = frozenset(range(10))
 F1_2026_ONLY_TRACK_IDS = frozenset({42})  # Madrid
 LAP_DATA_PACKET_ID = 2
 CAR_STATUS_PACKET_ID = 7
@@ -38,6 +45,14 @@ SESSION_GAME_MODE_OFFSET = 665
 SESSION_SEASON_LINK_OFFSET = 641
 SESSION_WEEKEND_LINK_OFFSET = 645
 SESSION_LINK_OFFSET = 649
+SESSION_FORMULA_OFFSET = 8
+
+# Sizes of packed per-car records, selected by packetFormat (not gameYear or
+# the detected season). The 2026 grid has 24 slots; legacy UDP has 22.
+CAR_RECORD_SIZES = {
+    2025: {0: 60, 2: 57, 5: 50, 6: 60, 7: 55, 10: 46},
+    2026: {0: 54, 2: 57, 5: 50, 6: 59, 7: 59, 10: 46},
+}
 
 CAR_SETUP_FIELDS = (
     "frontWing", "rearWing", "onThrottleDifferential", "offThrottleDifferential",
@@ -65,6 +80,12 @@ def tyre_compound_name(actual, visual):
 def has_bytes(data, offset, size):
     return offset >= 0 and len(data) >= offset + size
 
+def car_record_offset(data, player_car_index, size, max_cars):
+    if not 0 <= player_car_index < max_cars:
+        return None
+    offset = HEADER_SIZE + player_car_index * size
+    return offset if has_bytes(data, offset, size) else None
+
 def parse_car_motion(data, player_car_index, raw_packet_format):
     """Decode the selected wire layout, independently of detected car edition.
 
@@ -91,19 +112,25 @@ def parse_car_motion(data, player_car_index, raw_packet_format):
         return None
     return {"world_position_x": x, "world_position_z": z, "longitudinal_g": longitudinal}
 
-def parse_car_setup(data, player_car_index):
+def parse_car_setup(data, player_car_index, raw_packet_format=2025):
     """Decode only the player's compact 50-byte setup record."""
-    offset = HEADER_SIZE + player_car_index * CAR_SETUP_STRUCT.size
-    if not has_bytes(data, offset, CAR_SETUP_STRUCT.size):
+    offset = car_record_offset(data, player_car_index, CAR_SETUP_STRUCT.size,
+                               24 if raw_packet_format == 2026 else 22)
+    if offset is None:
         return None
-    return dict(zip(CAR_SETUP_FIELDS, CAR_SETUP_STRUCT.unpack_from(data, offset)))
+    values = CAR_SETUP_STRUCT.unpack_from(data, offset)
+    if not all(math.isfinite(value) for value in values):
+        return None
+    return dict(zip(CAR_SETUP_FIELDS, values))
 
 def parse_car_telemetry2(data, player_car_index):
     """Decode the official 2026-only active-aero and Overtake fields."""
-    offset = HEADER_SIZE + player_car_index * CAR_TELEMETRY2_STRUCT.size
-    if not has_bytes(data, offset, CAR_TELEMETRY2_STRUCT.size):
+    offset = car_record_offset(data, player_car_index, CAR_TELEMETRY2_STRUCT.size, 24)
+    if offset is None:
         return None
     values = CAR_TELEMETRY2_STRUCT.unpack_from(data, offset)
+    if any(values[index] not in (0, 1) for index in (0, 1, 3, 4, 6, 7)):
+        return None
     return dict(zip((
         "active_aero_mode", "active_aero_available", "active_aero_activation_distance",
         "overtake_available", "overtake_active", "overtake_activation_distance",
@@ -119,6 +146,7 @@ def parse_session_identity(data):
         "total_laps": data[offset + 3],
         "session_type": data[offset + 6],
         "track_id": struct.unpack_from("<b", data, offset + 7)[0],
+        "formula": data[offset + SESSION_FORMULA_OFFSET],
         "paused": bool(data[offset + 14]),
         "season_link_identifier": struct.unpack_from("<I", data, offset + SESSION_SEASON_LINK_OFFSET)[0],
         "weekend_link_identifier": struct.unpack_from("<I", data, offset + SESSION_WEEKEND_LINK_OFFSET)[0],
@@ -144,9 +172,8 @@ def ers_activity_for_wire_mode(raw_packet_format, ers_mode):
 
 def packet_indicates_season_pack(packet_id, data, player_car_index):
     """Recognize Season Pack even when its common header still says 2025/25."""
-    offset = HEADER_SIZE + player_car_index * CAR_TELEMETRY2_DATA_SIZE
     return (packet_id == CAR_TELEMETRY2_PACKET_ID
-            and has_bytes(data, offset, CAR_TELEMETRY2_DATA_SIZE))
+            and parse_car_telemetry2(data, player_car_index) is not None)
 
 def parse_participants_summary(data, packet_format):
     """Read active-car count and team IDs from either official wire layout."""
@@ -164,7 +191,10 @@ def parse_participants_summary(data, packet_format):
     else:
         return None
 
-    count = min(active_cars, max_cars)
+    if active_cars > max_cars or not has_bytes(
+            data, HEADER_SIZE + 1, active_cars * record_size):
+        return None
+    count = active_cars
     teams = []
     records_offset = HEADER_SIZE + 1
     team_size = struct.calcsize(team_format)
@@ -183,15 +213,57 @@ def season_pack_packet_evidence(packet_id, data, player_car_index, raw_packet_fo
         summary = parse_participants_summary(data, raw_packet_format)
         if summary:
             team_ids = set(summary["team_ids"])
-            if raw_packet_format == 2025 and team_ids & LEGACY_2026_F1_TEAM_IDS:
+            if raw_packet_format == 2025 and team_ids & LEGACY_SEASON_2026_TEAM_IDS:
                 return "participants_2026_team_id"
-            if raw_packet_format == 2026 and team_ids & F1_2026_TEAM_IDS:
+            if raw_packet_format == 2026 and team_ids & SEASON_2026_TEAM_IDS:
                 return "participants_2026_team_id"
     if packet_id == SESSION_PACKET_ID:
         identity = parse_session_identity(data)
-        if identity and identity["track_id"] in F1_2026_ONLY_TRACK_IDS:
-            return "2026_only_track"
+        if identity:
+            if identity["formula"] == 13:
+                return "session_formula_2026"
+            if identity["track_id"] in F1_2026_ONLY_TRACK_IDS:
+                return "2026_only_track"
     return None
+
+def update_edition_detection(latest, raw_packet_format, raw_game_year):
+    """Resolve positive season signals; never infer a season from packet length."""
+    packet_format, game_version = telemetry_mode(
+        raw_packet_format, raw_game_year, latest.get("season_pack_detected", False))
+    if raw_packet_format == 2026 or raw_game_year == 26:
+        detection = "udp_header"
+    elif latest.get("season_pack_detected"):
+        detection = latest.get("season_pack_detection") or "packet_evidence"
+    elif latest.get("formula") == 0:
+        # EA identifies the original modern F1 cars as formula 0, and the
+        # 2026 cars as formula 13, including in the legacy session prefix.
+        detection = "session_formula_2025"
+    elif latest.get("f1_25_detected") and latest.get("formula") in (None, 0):
+        detection = "participants_2025_team_id"
+    else:
+        detection = "legacy_udp_unconfirmed"
+    latest.update({
+        "edition_detection": detection,
+        "udp_configuration_warning": (
+            "Waiting for Session or Participants packets to identify F1 25 versus "
+            "the 2026 Season Pack automatically. The F1 25 UDP header alone is ambiguous."
+            if detection == "legacy_udp_unconfirmed" else None),
+        "game_year": 26 if packet_format == 2026 else raw_game_year,
+        "packet_format": packet_format, "game_version": game_version,
+        "raw_packet_format": raw_packet_format, "raw_game_year": raw_game_year,
+    })
+
+def edition_status(latest):
+    """Small public status used by the recording panel and saved-lap metadata."""
+    source = latest.get("edition_detection", "unknown")
+    confirmed = source not in ("unknown", "legacy_udp_unconfirmed")
+    version = latest.get("game_version", "unknown")
+    label = ("F1 25 · 2026 Season Pack" if version == "F1 26" else "F1 25")
+    if not confirmed:
+        label = "Detecting F1 25 / 2026 Season Pack" if latest.get("raw_packet_format") else "Waiting for game"
+    return {"label": label, "confirmed": confirmed, "source": source,
+            "wire_format": latest.get("raw_packet_format"), "formula": latest.get("formula"),
+            "warning": latest.get("udp_configuration_warning")}
 
 def _receive_packet(sock, stop_event=None):
     """Allow the desktop window to stop reception before draining saved laps."""
@@ -230,69 +302,53 @@ def udp_loop(latest, recorder=None, sock=None, stop_event=None):
 
         raw_packet_format = struct.unpack_from("<H", data, 0)[0]
         raw_game_year = data[2]
+        if raw_packet_format not in CAR_RECORD_SIZES:
+            continue
         incoming_session_uid = struct.unpack_from("<Q", data, 7)[0]
-        if latest.get("session_uid") != incoming_session_uid:
-            latest["world_position_x"] = None
-            latest["world_position_z"] = None
-            latest["longitudinal_g"] = None
-            latest["track_id"] = None
-            latest["session_type"] = None
-            latest["game_mode"] = None
-            latest["season_link_identifier"] = None
-            latest["weekend_link_identifier"] = None
-            latest["session_link_identifier"] = None
-            latest["car_setup"] = None
-            latest["season_pack_detected"] = False
-            latest["season_pack_detection"] = None
-            latest["num_active_cars"] = None
-            latest["participant_team_ids"] = []
-            latest["boost_active"] = 0
-            latest["overtake_available"] = 0
-            latest["overtake_active"] = 0
-            latest["aero_mode"] = 0
-            latest["active_aero_available"] = 0
-            latest["active_aero_activation_distance"] = 0
-            latest["overtake_activation_distance"] = 0
-            latest["regulations_2026"] = 0
-            latest["driving_wrong_way"] = 0
-            latest["telemetry2_received"] = False
-
         packet_id = data[6]
         player_car_index = data[27]
+        record_size = CAR_RECORD_SIZES[raw_packet_format].get(packet_id)
+        if record_size is not None and car_record_offset(
+                data, player_car_index, record_size,
+                24 if raw_packet_format == 2026 else 22) is None:
+            continue
+        identity = parse_session_identity(data) if packet_id == SESSION_PACKET_ID else None
+        if packet_id == SESSION_PACKET_ID and identity is None:
+            continue
+        participants = (parse_participants_summary(data, raw_packet_format)
+                        if packet_id == PARTICIPANTS_PACKET_ID else None)
+        if packet_id == PARTICIPANTS_PACKET_ID and participants is None:
+            continue
+        if packet_id == CAR_TELEMETRY2_PACKET_ID and parse_car_telemetry2(data, player_car_index) is None:
+            continue
+        old_link = latest.get("session_link_identifier")
+        new_session = (latest.get("session_uid") != incoming_session_uid or
+                       (identity is not None and old_link is not None and
+                        old_link != identity["session_link_identifier"]) or
+                       (identity is not None and latest.get("track_id") is not None and
+                        latest["track_id"] != identity["track_id"]) or
+                       (identity is not None and latest.get("formula") is not None and
+                        latest["formula"] != identity["formula"]))
+        if new_session:
+            latest.clear()
+            latest.update(copy.deepcopy(DEFAULT_TELEMETRY_STATE))
+            recording_health.reset(incoming_session_uid)
+        latest["session_uid"] = incoming_session_uid
+        latest["player_car_index"] = player_car_index
+        if identity is not None:
+            latest.update(identity)
         evidence = season_pack_packet_evidence(
             packet_id, data, player_car_index, raw_packet_format
         )
         if evidence:
             latest["season_pack_detected"] = True
             latest["season_pack_detection"] = evidence
-        if packet_id == PARTICIPANTS_PACKET_ID:
-            participants = parse_participants_summary(data, raw_packet_format)
-            if participants:
-                latest["num_active_cars"] = participants["num_active_cars"]
-                latest["participant_team_ids"] = participants["team_ids"]
-        packet_format, game_version = telemetry_mode(
-            raw_packet_format, raw_game_year, latest.get("season_pack_detected", False)
-        )
-        if raw_packet_format == 2026 or raw_game_year == 26:
-            latest["edition_detection"] = "udp_header"
-        elif latest.get("season_pack_detected"):
-            latest["edition_detection"] = latest.get("season_pack_detection") or "packet_evidence"
-        else:
-            # Legacy UDP does not identify whether the game content is 2025 or
-            # 2026, so this is an unconfirmed schema rather than a car edition.
-            latest["edition_detection"] = "legacy_udp_unconfirmed"
-        latest["udp_configuration_warning"] = (
-            "UDP format is set to F1 25 and no 2026-only signal has been seen yet. "
-            "Automatic detection may become available from the grid/track data; selecting "
-            "the 2026 Season Pack UDP format remains the most reliable setting."
-            if latest["edition_detection"] == "legacy_udp_unconfirmed" else None
-        )
-        latest["game_year"] = 26 if packet_format == 2026 else raw_game_year
-        latest["packet_format"] = packet_format
-        latest["game_version"] = game_version
-        latest["raw_packet_format"] = raw_packet_format
-        latest["raw_game_year"] = raw_game_year
-        latest["session_uid"] = incoming_session_uid
+        if participants is not None:
+            latest["num_active_cars"] = participants["num_active_cars"]
+            latest["participant_team_ids"] = participants["team_ids"]
+            latest["f1_25_detected"] = bool(set(participants["team_ids"]) & F1_2025_TEAM_IDS)
+        update_edition_detection(latest, raw_packet_format, raw_game_year)
+        packet_format = latest["packet_format"]
 
         # Packet format controls the wire layout. Edition detection is kept
         # separate because Season Pack can report a 2025/25 common header.
@@ -315,12 +371,15 @@ def udp_loop(latest, recorder=None, sock=None, stop_event=None):
                 continue
 
             speed, throttle, _, brake, _, _, _, drs = CAR_TELEMETRY_STRUCT.unpack_from(data, offset)
+            if not all(math.isfinite(value) for value in (throttle, brake)):
+                continue
 
             latest["speed"] = speed
 
             if latest["game_version"] == "F1 26":
                 latest["drs"] = 0
-                latest["aero"] = drs
+                if not latest.get("telemetry2_received"):
+                    latest["aero"] = drs
             else:
                 latest["drs"] = drs
                 latest["aero"] = 0
@@ -335,11 +394,14 @@ def udp_loop(latest, recorder=None, sock=None, stop_event=None):
                 continue
 
             current_lap_time_ms = struct.unpack_from("<I", data, offset + 4)[0]
+            lap_distance = struct.unpack_from("<f", data, offset + 20)[0]
+            if not math.isfinite(lap_distance):
+                continue
             latest["last_lap_time_ms"] = struct.unpack_from("<I", data, offset)[0]
             # F1 25/26 LapData includes minute parts for sector/delta fields.
             # This places lapDistance at 20, currentLapNum at 33, pitStatus at
             # 34 and currentLapInvalid at 37 (all relative to the car record).
-            if has_bytes(data, offset + 20, 4): latest["lap_distance"] = struct.unpack_from("<f", data, offset + 20)[0]
+            latest["lap_distance"] = lap_distance
             if has_bytes(data, offset + 34, 1):
                 latest["lap_number"] = data[offset + 33]
                 latest["pit_status"] = data[offset + 34]
@@ -355,34 +417,39 @@ def udp_loop(latest, recorder=None, sock=None, stop_event=None):
         elif packet_id == MOTION_EX_PACKET_ID:
             # PacketMotionEx: suspension position/velocity/acceleration, then wheel speed and slip ratio.
             offset = HEADER_SIZE
-            if has_bytes(data, offset + 48, 32):
-                latest["wheel_speed"] = list(struct.unpack_from("<4f", data, offset + 48))
-                latest["wheel_slip_ratio"] = list(struct.unpack_from("<4f", data, offset + 64))
+            if not has_bytes(data, offset, 244):
+                continue
+            wheels = struct.unpack_from("<8f", data, offset + 48)
+            if not all(math.isfinite(value) for value in wheels):
+                continue
+            latest["wheel_speed"] = list(wheels[:4])
+            latest["wheel_slip_ratio"] = list(wheels[4:])
 
         elif packet_id == CAR_DAMAGE_PACKET_ID:
             offset = HEADER_SIZE + player_car_index * CAR_DAMAGE_DATA_SIZE
-            if has_bytes(data, offset, 16): latest["tyres_wear"] = list(struct.unpack_from("<4f", data, offset))
+            wear = struct.unpack_from("<4f", data, offset)
+            if not all(math.isfinite(value) for value in wear):
+                continue
+            latest["tyres_wear"] = list(wear)
 
         elif packet_id == SESSION_PACKET_ID:
-            identity = parse_session_identity(data)
-            if identity is not None:
-                incoming_track_id = identity["track_id"]
-                if latest.get("track_id") != incoming_track_id:
-                    latest["car_setup"] = None
-                previous_link = latest.get("session_link_identifier")
-                latest.update(identity)
-                if previous_link is not None and previous_link != identity["session_link_identifier"]:
-                    latest["car_setup"] = None
+            if identity is None:
+                continue
 
         elif packet_id == CAR_SETUPS_PACKET_ID:
-            setup = parse_car_setup(data, player_car_index)
-            if setup is not None:
-                latest["car_setup"] = setup
+            setup = parse_car_setup(data, player_car_index, raw_packet_format)
+            if setup is None:
+                continue
+            latest["car_setup"] = setup
 
         elif packet_id == CAR_STATUS_PACKET_ID:
             offset = HEADER_SIZE + player_car_index * CAR_STATUS_DATA_SIZE
 
             if not has_bytes(data, offset + 41, 1):
+                continue
+            fuel = struct.unpack_from("<3f", data, offset + 5)
+            mguk_power, ers_store_energy = struct.unpack_from("<2f", data, offset + 33)
+            if not all(math.isfinite(value) for value in (*fuel, mguk_power, ers_store_energy)):
                 continue
 
             actual_compound = struct.unpack_from("<B", data, offset + 25)[0]
@@ -390,12 +457,8 @@ def udp_loop(latest, recorder=None, sock=None, stop_event=None):
             latest["tyre_compound"] = tyre_compound_name(actual_compound, visual_compound)
             latest["tyres_age_laps"] = struct.unpack_from("<B", data, offset + 27)[0]
 
-            if has_bytes(data, offset + 5, 12):
-                latest["fuel_in_tank_kg"] = struct.unpack_from("<f", data, offset + 5)[0]
-                latest["fuel_capacity_kg"] = struct.unpack_from("<f", data, offset + 9)[0]
-                latest["fuel_remaining_laps"] = struct.unpack_from("<f", data, offset + 13)[0]
-            latest["ers_mguk_power"] = struct.unpack_from("<f", data, offset + 33)[0]
-            ers_store_energy = struct.unpack_from("<f", data, offset + 37)[0]
+            latest["fuel_in_tank_kg"], latest["fuel_capacity_kg"], latest["fuel_remaining_laps"] = fuel
+            latest["ers_mguk_power"] = mguk_power
             latest["ers_store_energy_j"] = ers_store_energy
             latest["ers_percent"] = round((ers_store_energy / 4000000) * 100)
             ers_mode = data[offset + 41]
@@ -404,7 +467,7 @@ def udp_loop(latest, recorder=None, sock=None, stop_event=None):
             # selectable legacy F1 25 wire schema.
             activity = ers_activity_for_wire_mode(raw_packet_format, ers_mode)
             latest["boost_active"] = activity["boost_active"]
-            if raw_packet_format == 2025:
+            if raw_packet_format == 2025 and not latest.get("telemetry2_received"):
                 latest["overtake_active"] = activity["legacy_overtake_active"]
 
         elif packet_id == CAR_TELEMETRY2_PACKET_ID and packet_format == 2026:
@@ -426,12 +489,13 @@ def udp_loop(latest, recorder=None, sock=None, stop_event=None):
             MOTION_PACKET_ID: HEADER_SIZE + (player_car_index + 1) * (
                 MOTION_DATA_SIZE_2026 if raw_packet_format == 2026 else MOTION_DATA_SIZE_2025),
             SESSION_PACKET_ID: HEADER_SIZE + SESSION_GAME_MODE_OFFSET + 1,
+            PARTICIPANTS_PACKET_ID: HEADER_SIZE + 1,
             LAP_DATA_PACKET_ID: HEADER_SIZE + player_car_index * LAP_DATA_SIZE_CURRENT + 38,
             CAR_SETUPS_PACKET_ID: HEADER_SIZE + player_car_index * CAR_SETUP_STRUCT.size + CAR_SETUP_STRUCT.size,
             CAR_TELEMETRY_PACKET_ID: HEADER_SIZE + player_car_index * CAR_TELEMETRY_DATA_SIZE + CAR_TELEMETRY_STRUCT.size,
             CAR_STATUS_PACKET_ID: HEADER_SIZE + player_car_index * CAR_STATUS_DATA_SIZE + 42,
             CAR_DAMAGE_PACKET_ID: HEADER_SIZE + player_car_index * CAR_DAMAGE_DATA_SIZE + 16,
-            MOTION_EX_PACKET_ID: HEADER_SIZE + 80,
+            MOTION_EX_PACKET_ID: HEADER_SIZE + 244,
             CAR_TELEMETRY2_PACKET_ID: HEADER_SIZE + player_car_index * CAR_TELEMETRY2_DATA_SIZE + CAR_TELEMETRY2_DATA_SIZE,
         }
         if (packet_id in health_sizes and len(data) >= health_sizes[packet_id]

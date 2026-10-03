@@ -6,11 +6,13 @@ UDPテレメトリーを距離ベースで記録し、ラップ比較・ミス�
 
 開発への参加・Windowsでのソース環境構築・プルリクエストの手順は [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください (English)。
 
+F1 25と2026 Season Packは受信パケットから自動判別します。Recording healthを開くと判別結果とParticipantsパケットの受信状態を確認できます。判別に必要なデータがまだ届いていない場合は待機表示になります。[パケット監査と判別条件](docs/UDP_PACKET_AUDIT.md)も参照してください。
+
 ## 起動
 
 ### Windowsアプリ版（配布・ノートPCテスト）
 
-`releases/F1-Telemetry-0.3.1-laptop-preview-windows-x64.zip` を全て展開し、
+`releases/F1-Telemetry-0.3.2-udp-preview-windows-x64.zip` を全て展開し、
 `F1 Telemetry.exe` をダブルクリックすると専用ウィンドウで開きます。
 Pythonのインストールは不要です。WebView2 Runtimeが必要です。
 `Test previous laps.cmd` では実際の過去37周を別コピーで確認でき、記録は無効です。
@@ -20,7 +22,7 @@ Pythonのインストールは不要です。WebView2 Runtimeが必要です。
 英語版は [docs/LAPTOP_TEST.md](docs/LAPTOP_TEST.md)、
 完全なマニュアルは [日本語](docs/manual-ja.html) ／ [English](docs/manual-en.html)、測定した負荷は [docs/PERFORMANCE.md](docs/PERFORMANCE.md) です。
 
-友人向けの初回配布ZIPは `F1テレメトリー_初回配布版_v0.3.1_プレビュー_Windows64bit.zip`、説明書だけのZIPは `F1テレメトリー_使い方マニュアル_日本語・英語_v0.3.1.zip` です。展開後は `最初にお読みください.md` と `使い方_日本語.html` を開いてください。[リリース前レビュー](docs/リリース前レビュー_日本語.md) に確認結果と未確認の事項を記載しています。
+友人向けの初回配布ZIPは `F1テレメトリー_初回配布版_v0.3.2_プレビュー_Windows64bit.zip`、説明書だけのZIPは `F1テレメトリー_使い方マニュアル_日本語・英語_v0.3.2.zip` です。展開後は `最初にお読みください.md` と `使い方_日本語.html` を開いてください。[リリース前レビュー](docs/リリース前レビュー_日本語.md) は旧0.3.1の検証結果です。0.3.2はパケット監査と213テストが通過し、EXEを再ビルドしましたが、Windows Application Controlにより新EXEの起動検証は未完了です。
 構造のレビューと今後の改善案は [docs/STRUCTURE_REVIEW.md](docs/STRUCTURE_REVIEW.md) を参照してください。
 
 開発環境からビルドする場合は `powershell -ExecutionPolicy Bypass -File scripts/Build-Desktop.ps1` を実行します。

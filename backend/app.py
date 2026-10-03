@@ -2,7 +2,7 @@ import threading
 from datetime import datetime, timezone
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory
 from state import latest
-from telemetry import udp_loop
+from telemetry import udp_loop, edition_status
 from lap_analyzer import analyze_lap
 from lap_recorder import LapRecorder
 from storage import LapStorage
@@ -48,7 +48,7 @@ def favicon():
 @app.get("/api/recording-health")
 def recording_health_status():
     return jsonify(recording_health.snapshot(latest.get("game_version") == "F1 26") |
-                   {"saving": recorder.persistence_status()})
+                   {"saving": recorder.persistence_status(), "edition": edition_status(latest)})
 
 @app.get("/api/laps/<path:lap_id>/workspace-insights")
 def lap_workspace_insights(lap_id):

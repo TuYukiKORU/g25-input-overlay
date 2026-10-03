@@ -76,6 +76,14 @@ class LapRecorder:
                                  "gameVersion": "F1 26", "udpMode": "2026 Season Pack",
                                  "editionDetection": state.get("edition_detection", "udp_header"),
                                  "udpConfigurationWarning": None})
+        if self.current:
+            # Identification can arrive after the first timing packet for
+            # either season. Keep its evidence and warning current.
+            self.current.update({"editionDetection": state.get("edition_detection", "unknown"),
+                                 "udpConfigurationWarning": state.get("udp_configuration_warning"),
+                                 "formula": state.get("formula"),
+                                 "sourcePacketFormat": state.get("raw_packet_format", state.get("packet_format")),
+                                 "sourceGameYear": state.get("raw_game_year", state.get("game_year"))})
         if self.current and lap_no != self.current["lapNumber"]:
             self._finish(state)
         elif self.last_distance is not None and distance < self.last_distance - 100:
@@ -99,6 +107,7 @@ class LapRecorder:
                             "sourcePacketFormat": state.get("raw_packet_format", state.get("packet_format")),
                             "sourceGameYear": state.get("raw_game_year", state.get("game_year")),
                             "editionDetection": state.get("edition_detection", "unknown"),
+                            "formula": state.get("formula"),
                             "udpConfigurationWarning": state.get("udp_configuration_warning"),
                             "sessionUid": state.get("session_uid"), "trackId": state.get("track_id"),
                             "sessionType": state.get("session_type"),

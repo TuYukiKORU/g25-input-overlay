@@ -10,7 +10,7 @@
     <details class="card" id="wearPanel"><summary>Tyre wear and pace evidence</summary><p id="wearEvidence"></p><p id="wearMethod" class="workspace-muted"></p></details>
     <details class="card" id="setupPanel"><summary>Setup comparison <small id="setupCount"></small></summary><div id="setupRows">Select a different comparison lap.</div></details>`;
   const health = document.createElement('details'); health.className = 'recording-health';
-  health.innerHTML = '<summary id="recordingStatus">Checking recording…</summary><div id="recordingGroups"></div><small id="recordingNotice"></small>';
+  health.innerHTML = '<summary id="recordingStatus">Checking recording…</summary><p id="recordingEdition"></p><div id="recordingGroups"></div><small id="recordingNotice"></small>';
   document.querySelector('header').append(health);
   get('stintSelect').onchange = event => {stintIndex = Number(event.target.value); renderStint();};
   get('includeUnclean').onchange = renderStint;
@@ -38,10 +38,12 @@
       const savingFailed = health.saving?.ok === false;
       get('recordingStatus').textContent = savingFailed ? 'Recording: save error' : `Recording: ${health.state}`;
       get('recordingStatus').dataset.state = savingFailed ? 'save-error' : health.state;
+      get('recordingEdition').textContent = health.edition?.label || 'Waiting for game';
+      get('recordingEdition').title = health.edition?.wire_format ? `UDP ${health.edition.wire_format}` : '';
       get('recordingGroups').innerHTML = health.groups.map(group => `<div><span>${esc(group.name)}</span><b data-state="${group.state}">${group.state}${group.age_s != null ? ` · ${group.age_s.toFixed(1)} s ago` : ''}</b></div>`).join('');
       get('recordingNotice').textContent = savingFailed
         ? 'Some lap saves failed. Check free disk space and folder permissions, then open the logs folder for details.'
-        : health.notice;
+        : [health.edition?.warning, health.notice].filter(Boolean).join(' ');
     } catch { get('recordingStatus').textContent = 'Recording status unavailable'; }
     setTimeout(pollHealth, 3000);
   }

@@ -205,6 +205,7 @@ class LapStorage:
                                 "sourcePacketFormat": lap.get("sourcePacketFormat"),
                                 "sourceGameYear": lap.get("sourceGameYear"),
                                 "editionDetection": lap.get("editionDetection"),
+                                "formula": lap.get("formula"),
                                 "udpConfigurationWarning": lap.get("udpConfigurationWarning"),
                                 "sessionType": lap.get("sessionType"),
                                 "totalLaps": lap.get("totalLaps"),

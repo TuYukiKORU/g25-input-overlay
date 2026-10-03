@@ -202,7 +202,7 @@ def test_udp_health_ignores_truncated_groups_and_tracks_decoded_controls(monkeyp
 
     packets = iter([packet(1, telemetry.SESSION_LINK_OFFSET + 4),
                     packet(0, 12), packet(6, 2),
-                    packet(6, telemetry.CAR_TELEMETRY_STRUCT.size)])
+                    packet(6, 60)])  # A complete 2025 player record, not just its prefix.
 
     class FakeSocket:
         def bind(self, address):

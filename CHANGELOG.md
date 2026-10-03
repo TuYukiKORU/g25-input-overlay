@@ -4,6 +4,10 @@
 
 ## 2026-10-03
 
+- Audited all consumed UDP packet layouts against EA's Season 8 specifications and added replay coverage for both complete grids.
+- Automatically distinguish F1 25 and the 2026 Season Pack using headers, Session formula and participant teams, including 2026 F2; show the result in Recording health and refresh late lap metadata.
+- Reject incomplete car records and nonfinite values, clear car data and packet health across session changes, and preserve dedicated aero/Overtake fields when legacy packets arrive.
+- Rebuilt Windows 0.3.2-udp-preview with these fixes; 213 tests pass. Windows Application Control blocked the new EXE smoke launch, so native validation remains pending.
 - Fixed 2026 Motion decoding to use 54-byte car records and signed longitudinal G scaled by 1000, while preserving the 2025 wire layout.
 - Reset motion fields between sessions and reject truncated/nonfinite motion records.
 - Show speed-derived acceleration estimates for older laps with unusable all-zero motion data; clearly mark estimates without changing saved telemetry.
