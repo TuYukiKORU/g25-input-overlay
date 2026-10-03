@@ -45,11 +45,11 @@ def test_short_pedal_jitter_is_merged_into_surrounding_section():
     assert early[0]["kind"] == "flat_out"
 
 
-def test_missing_position_returns_reason():
+def test_missing_inputs_return_reason():
     result = analyze_operation_sections({"samples": [{"lap_distance": n * 5, "speed": 100}
                                                        for n in range(200)]})
     assert result["analyzable"] is False
-    assert "XYZ" in result["reason"]
+    assert "input" in result["reason"]
 
 
 def test_library_uses_fast_valid_non_pit_laps_and_reports_consensus():

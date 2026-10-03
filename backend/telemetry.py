@@ -103,14 +103,14 @@ def parse_car_motion(data, player_car_index, raw_packet_format):
     offset = HEADER_SIZE + player_car_index * size
     if not has_bytes(data, offset, size):
         return None
-    x, _, z = struct.unpack_from("<3f", data, offset)
+    x, y, z = struct.unpack_from("<3f", data, offset)
     if raw_packet_format == 2026:
         longitudinal = struct.unpack_from("<h", data, offset + MOTION_LONGITUDINAL_G_OFFSET_2026)[0] / 1000.0
     else:
         longitudinal = struct.unpack_from("<f", data, offset + MOTION_LONGITUDINAL_G_OFFSET)[0]
-    if not all(math.isfinite(value) for value in (x, z, longitudinal)):
+    if not all(math.isfinite(value) for value in (x, y, z, longitudinal)):
         return None
-    return {"world_position_x": x, "world_position_z": z, "longitudinal_g": longitudinal}
+    return {"world_position_x": x, "world_position_y": y, "world_position_z": z, "longitudinal_g": longitudinal}
 
 def parse_car_setup(data, player_car_index, raw_packet_format=2025):
     """Decode only the player's compact 50-byte setup record."""

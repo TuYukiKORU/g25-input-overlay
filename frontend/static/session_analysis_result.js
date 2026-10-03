@@ -33,6 +33,8 @@ function renderResult(value) {
   if (value.selected_lap_id) adjustParams.set("selected_lap_id", value.selected_lap_id);
   $("adjustLink").href = `/map-corners?${adjustParams}`;
   $("resultContent").hidden = false;
+  $("coordinateNotice").hidden = value.coordinate_mode !== 'planar_xz';
+  $("coordinateNotice").textContent = 'Planar track analysis: these recordings lack measured elevation. All laps use their recorded X/Z positions.';
   $("statusCard").hidden = true;
   $("targetLabel").textContent = `Lap ${value.selected_lap_number ?? "—"} vs Lap ${value.comparison_lap_number ?? "—"}`;
   if (value.comparison_context) {

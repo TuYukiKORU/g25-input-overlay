@@ -6,7 +6,7 @@ DEFAULT_TELEMETRY_STATE = {
     "current_lap_time_ms": 0,
     "last_lap_time_ms": 0, "lap_number": 0, "lap_distance": None,
     "total_laps": None,
-    "world_position_x": None, "world_position_z": None,
+    "world_position_x": None, "world_position_y": None, "world_position_z": None,
     "longitudinal_g": None,
     "wheel_speed": [None] * 4, "wheel_slip_ratio": [None] * 4,
     "tyres_wear": [None] * 4, "tyre_compound": "Unknown", "tyres_age_laps": None,

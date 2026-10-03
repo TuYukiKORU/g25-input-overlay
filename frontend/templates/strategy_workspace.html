@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en"><head>
+{% include "_app_icons.html" %}
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>F1 Telemetry · Strategy</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='page_nav.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='strategy_workspace.css') }}">
+</head><body><main>
+  <header class="workspace-header"><div><p class="eyebrow">F1 TELEMETRY</p><h1>Strategy</h1><p>Plan energy use, compare alternatives, and check the evidence.</p></div><span class="estimate-label">Model estimates</span></header>
+  {% include "_page_nav.html" %}
+  <section class="context-controls" aria-label="Shared strategy context">
+    <label>Session / course<select id="sessionSelect" aria-label="Select session"></select></label>
+    <label>Course<select id="trackSelect" aria-label="Select course"></select></label>
+    <label>Reference lap<select id="lapSelect" aria-label="Select reference lap"></select></label>
+  </section>
+  <div id="readiness" class="readiness" role="status"></div>
+  <nav class="goal-tabs" aria-label="Strategy goal">
+    <button type="button" data-goal="race" aria-pressed="true">Race energy</button>
+    <button type="button" data-goal="compare" aria-pressed="false">Compare scenarios</button>
+    <button type="button" data-goal="qualifying" aria-pressed="false">Qualifying energy</button>
+  </nav>
+  <form id="planForm" class="plan-controls">
+    <label><span id="startLabel">Starting battery (%)</span><input id="startSoc" type="number" min="0" max="100" step="0.1" value="100" required></label>
+    <label>Battery reserve (%)<input id="reserveSoc" type="number" min="0" max="100" step="0.1" value="5" required></label>
+    <label id="deploymentControl">Deployment mode<select id="deploymentMode"><option value="boost">Boost only</option><option value="overtake">Overtake only</option></select></label>
+    <label class="race-control">Forecast horizon<select id="horizon"><option value="3">3 laps</option><option value="4">4 laps</option><option value="5">5 laps</option></select></label>
+    <label class="race-control">Remaining laps (optional)<input id="remainingLaps" type="number" min="1" max="100" step="1" placeholder="Unknown"></label>
+    <label id="lineControl" hidden>Minimum battery at timing line (%)<input id="lineSoc" type="number" min="0" max="100" step="0.1" value="80"></label>
+    <button type="submit" id="buildPlan" disabled>Build plan</button>
+  </form>
+  <div class="calculation-bar"><p id="calculationState" role="status" aria-live="polite">Choose a reference lap to check available data.</p><progress id="jobProgress" max="100" value="0" hidden></progress></div>
+  <p id="errorMessage" role="alert" hidden></p>
+  <section id="emptyState" class="panel empty-state"><h2>Plan the next lap</h2><p>Choose a goal and build a plan. Battery curves, track actions and forecasts will use one shared calculation.</p><p>Race energy covers a 3–5 lap horizon. Pit stops, traffic and weather changes are outside this model.</p></section>
+  <section id="planResults" hidden>
+    <div class="result-heading"><div><h2 id="resultTitle">Next-lap energy plan</h2><p id="resultContext"></p></div><span id="resultStatus" class="estimate-label">Estimated plan</span></div>
+    <div id="scenarioChoices" class="scenario-choices" aria-label="Select a scenario" hidden></div>
+    <div class="plan-layout">
+      <article class="panel track-panel"><div class="panel-heading"><h2 id="mapTitle">Next-lap energy plan</h2><a id="editCornersLink" href="/map-corners">Edit track corners</a></div>
+        <p id="mapNotice" class="data-notice" hidden></p><canvas id="planMap" role="img" aria-label="Track positions and estimated energy actions"></canvas>
+        <div class="legend"><span class="boost">Boost</span><span class="overtake">Overtake</span><span class="lift">Lift</span><span class="neutral">Other sections</span></div>
+        <h3>Actions by lap distance</h3><div id="actionStrip" class="action-strip" aria-label="Select a section"></div>
+        <p id="sectionDetail" class="section-detail" aria-live="polite">Select a section to inspect its action and evidence.</p>
+      </article>
+      <div class="plan-side">
+        <article class="panel"><h2 id="forecastTitle">Battery over the next laps</h2><div id="forecast" class="forecast" aria-live="polite"></div><p id="forecastNotice" class="muted"></p>
+          <h3>Battery through this lap</h3><canvas id="socChart" role="img" aria-label="Estimated battery against lap distance"></canvas><p id="curveNotice" class="muted"></p>
+        </article>
+        <article class="panel"><h2>Evidence</h2><div id="evidenceSummary"></div><p class="model-notice">Estimated effects need validation against a recorded lap. Observed counts describe source coverage, not predictive accuracy.</p><button type="button" id="inspectEvidence">Inspect sources and assumptions</button></article>
+      </div>
+    </div>
+    <details id="plannedSections" class="panel supporting-panel"><summary>All planned sections</summary><div class="table-scroll"><table><thead><tr><th>Section</th><th>Distance</th><th>Action</th><th>Modeled coverage</th><th>Evidence</th></tr></thead><tbody id="allocationRows"></tbody></table></div></details>
+    <details id="referencePanel" class="panel supporting-panel"><summary>Track reference</summary><p class="muted">Representative input sections from compatible saved laps. A frequent action is not necessarily the fastest action.</p><div class="table-scroll"><table><thead><tr><th>Section</th><th>Distance</th><th>Input pattern</th><th>Median speed</th></tr></thead><tbody id="referenceRows"></tbody></table></div></details>
+    <details id="evidencePanel" class="panel supporting-panel"><summary>Sources and assumptions</summary><p id="conditionNotice"></p><p id="excludedNotice"></p><ul id="assumptionList"></ul><div class="table-scroll"><table><thead><tr><th>Source lap</th><th>Lap time</th><th>Tyre</th><th>Starting fuel</th></tr></thead><tbody id="sourceRows"></tbody></table></div></details>
+    <div class="supporting-links"><a id="sessionReportLink" href="/session-analysis">Review this session</a><a href="/analysis">Open lap analysis</a></div>
+  </section>
+  <footer>Saved-lap planning · recalculate from measured battery after each lap</footer>
+</main>
+<script src="{{ url_for('static', filename='session_context.js') }}"></script>
+<script src="{{ url_for('static', filename='strategy_workspace.js') }}"></script>
+</body></html>

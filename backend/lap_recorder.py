@@ -139,7 +139,8 @@ class LapRecorder:
         ers_usage = (bool(state.get("boost_active") or state.get("overtake_active"))
                      if season_pack else int(state.get("ers_mode") or 0) == 3)
         return {"lap_distance": state.get("lap_distance"), "lap_time_ms": state.get("current_lap_time_ms"),
-                "position": {"x": state.get("world_position_x"), "z": state.get("world_position_z")},
+                "position": {"x": state.get("world_position_x"), "y": state.get("world_position_y"),
+                             "z": state.get("world_position_z")},
                 "speed": state.get("speed", 0),
                 "throttle": state.get("throttle_raw", 0), "brake": state.get("brake_raw", 0),
                 "longitudinal_g": state.get("longitudinal_g"),

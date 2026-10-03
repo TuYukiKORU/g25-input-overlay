@@ -106,7 +106,7 @@ def test_udp_motion_reaches_saved_lap_for_both_season_pack_wire_layouts(monkeypa
     telemetry.udp_loop(state(1, 0, 0), recorder, sock=SimpleNamespace(close=lambda: None))
     assert recorder.flush(2)
     samples = storage.laps[0]["samples"]
-    assert samples[0]["position"] == {"x": 125.5, "z": -834.25}
+    assert samples[0]["position"] == {"x": 125.5, "y": 12.0, "z": -834.25}
     assert samples[-1]["position"]["x"] == 2125.5
     assert all(sample["longitudinal_g"] == -2.75 for sample in samples)
     assert (0, 1) in received

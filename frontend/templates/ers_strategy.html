@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='page_nav.css') }}">
 </head><body><main>
   <header><div><p class="eyebrow">F1 26 EDITION · EMPIRICAL ERS</p><h1>ERS Strategy</h1><p>Boost、Overtake、操作なし、クリッピングの区間タイムを比較し、効果的な使用位置を推定します。</p></div><span class="experiment-badge">MEASURED + INFERRED</span></header>
-  <nav class="page-tabs"><a href="/analysis">Lap analysis</a><a href="/session-analysis">Session analysis</a><a href="/analysis/qualifying">Qualifying strategy</a><a href="/operation-library">Operation Library</a><a class="active" href="/ers-strategy">ERS Strategy</a><details class="archive-nav"><summary>Archive</summary><div class="archive-nav-menu"><a href="/analysis/race">Race strategy <small>Multi-lap prototype</small></a><a href="/map-corners">Map &amp; Corners <small>Track definition</small></a></div></details></nav>
+  {% include "_page_nav.html" %}
   <section class="card ers-controls"><label>26 edition course<select id="trackSelect"></select></label><label>最速からの許容差 <output id="paceValue"></output><input id="paceWindow" type="range" min="2" max="12" step="1" value="5"></label><label>比較する最大周回 <output id="maxLapsValue"></output><input id="maxLaps" type="range" min="2" max="24" step="1" value="16"></label><label>比較窓 <output id="windowValue"></output><input id="windowSize" type="range" min="100" max="400" step="50" value="200"></label></section>
   <section class="strategy-heading"><div><p class="eyebrow" id="evidenceLabel">LOADING</p><h2 id="trackTitle">—</h2></div><p id="methodText"></p></section>
   <section id="modeSummary" class="mode-summary"></section>

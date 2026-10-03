@@ -118,7 +118,7 @@ class LapStorage:
 
     def strategy_path(self, session_id, track_id, kind, analysis_id, name="result.json"):
         session_dir = self._safe_session_dir(session_id)
-        if session_dir is None or kind not in ("qualifying", "race"):
+        if session_dir is None or kind not in ("qualifying", "race", "workspace"):
             return None
         safe_track = str(track_id).replace("/", "_").replace("\\", "_")
         safe_id = str(analysis_id)

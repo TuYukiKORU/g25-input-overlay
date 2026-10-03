@@ -1,0 +1,8 @@
+<nav class="page-tabs" aria-label="Main workspaces">
+  <a href="/analysis"{% if request.path == '/analysis' %} class="active" aria-current="page"{% endif %}>Lap analysis</a>
+  <a href="/strategy"{% if request.path == '/strategy' %} class="active" aria-current="page"{% endif %}>Strategy</a>
+  <details class="archive-nav"><summary>Tools</summary><div class="archive-nav-menu">
+    <a href="/session-analysis" data-context-link="report">Session report</a>
+    <a href="/map-corners" data-context-link="corners">Edit track corners</a>
+  </div></details>
+</nav>

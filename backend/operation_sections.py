@@ -2,6 +2,7 @@
 from bisect import bisect_left
 from collections import Counter
 from statistics import median
+from telemetry_quality import geometry_quality, lap_edition, number
 
 
 SECTION_META = {
@@ -15,7 +16,7 @@ SECTION_META = {
 def _number(value, default=None):
     try:
         value = float(value)
-        return value if value == value else default
+        return value if number(value) is not None else default
     except (TypeError, ValueError):
         return default
 
@@ -34,7 +35,8 @@ def _raw_rows(lap):
         distance = _number(sample.get("lap_distance"))
         speed = _number(sample.get("speed"))
         x, z = _number(position.get("x")), _number(position.get("z"))
-        if None in (distance, speed, x, z):
+        if None in (distance, speed, _number(sample.get("lap_time_ms")),
+                    _number(sample.get("throttle")), _number(sample.get("brake"))):
             continue
         rows.append({
             "s": distance, "t": _number(sample.get("lap_time_ms")),
@@ -137,7 +139,7 @@ def analyze_operation_sections(lap, step_m=5.0, smoothing_m=15.0,
     """Return a distance-resampled racing line and exclusive input sections."""
     rows = _raw_rows(lap)
     if len(rows) < 20:
-        return {"analyzable": False, "reason": "入力とXYZ座標を持つサンプルが不足しています", "points": [], "sections": []}
+        return {"analyzable": False, "reason": "Distance and input samples are insufficient.", "points": [], "sections": []}
     start, finish = max(0.0, rows[0]["s"]), rows[-1]["s"]
     if finish - start < 500:
         return {"analyzable": False, "reason": "コース全体を構成できる距離データがありません", "points": [], "sections": []}
@@ -160,7 +162,8 @@ def analyze_operation_sections(lap, step_m=5.0, smoothing_m=15.0,
             (values["speed"][after] - values["speed"][before]) / 3.6 / elapsed)
         points.append({
             "s": round(distance, 1), "t": round(values["t"][index] or 0),
-            "x": round(values["x"][index], 3), "z": round(values["z"][index], 3),
+            "x": round(values["x"][index], 3) if values["x"][index] is not None else None,
+            "z": round(values["z"][index], 3) if values["z"][index] is not None else None,
             "speed": round(values["speed"][index], 1),
             "throttle": round(values["throttle"][index], 3),
             "brake": round(values["brake"][index], 3),
@@ -191,7 +194,8 @@ def analyze_operation_sections(lap, step_m=5.0, smoothing_m=15.0,
     totals = {kind: round(sum(section["length_m"] for section in sections if section["kind"] == kind), 1)
               for kind in SECTION_META}
     return {
-        "analyzable": True, "reason": None, "track_length_m": round(finish, 1),
+        "analyzable": True, "reason": None, "geometry": geometry_quality(lap.get("samples", [])),
+        "track_length_m": round(finish, 1),
         "source_lap_number": lap.get("lapNumber"), "lap_time_ms": lap.get("lapTimeMs"),
         "sample_count": len(points), "settings": {
             "step_m": step_m, "smoothing_m": smoothing_m, "min_section_m": min_section_m,
@@ -226,7 +230,8 @@ def build_operation_library(lap_entries, pace_window_percent=3.0, max_laps=8,
 
     best_time = eligible[0][2]
     cutoff = best_time * (1.0 + pace_window_percent / 100.0)
-    selected = [item for item in eligible if item[2] <= cutoff]
+    edition = lap_edition(eligible[0][1])
+    selected = [item for item in eligible if item[2] <= cutoff and lap_edition(item[1]) == edition]
     analyses = []
     reference_length = None
     for lap_id, lap, lap_time in selected:
@@ -247,7 +252,8 @@ def build_operation_library(lap_entries, pace_window_percent=3.0, max_laps=8,
         return {"analyzable": False, "reason": "十分速い比較可能なラップが2周以上ありません", "points": [], "sections": [],
                 "source_laps": [], "eligible_lap_count": len(eligible)}
 
-    reference = analyses[0]["analysis"]
+    reference_item = next((item for item in analyses if item["analysis"]["geometry"]["available"]), analyses[0])
+    reference = reference_item["analysis"]
     points = []
     priority = {kind: len(SECTION_META) - index for index, kind in enumerate(SECTION_META)}
     for index, reference_point in enumerate(reference["points"]):
@@ -311,7 +317,8 @@ def build_operation_library(lap_entries, pace_window_percent=3.0, max_laps=8,
         })
     overall_confidence = sum(point["confidence"] for point in points) / len(points)
     return {
-        "analyzable": True, "reason": None,
+        "analyzable": True, "reason": None, "geometry": reference["geometry"],
+        "geometry_source_lap_id": reference_item["id"] if reference["geometry"]["available"] else None,
         "track_id": analyses[0]["lap"].get("trackId"),
         "track_length_m": reference["track_length_m"], "best_lap_time_ms": best_time,
         "compared_lap_count": len(analyses), "eligible_lap_count": len(eligible),

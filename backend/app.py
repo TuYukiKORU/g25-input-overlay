@@ -99,11 +99,13 @@ def operation_map_page():
 
 @app.route("/operation-library")
 def operation_library_page():
-    return render_template("operation_library.html")
+    from urllib.parse import urlencode
+    return redirect("/strategy?" + urlencode(request.args.to_dict() | {"panel": "reference"}))
 
 @app.route("/ers-strategy")
 def ers_strategy_page():
-    return render_template("ers_strategy.html")
+    from urllib.parse import urlencode
+    return redirect("/strategy?" + urlencode(request.args.to_dict()))
 
 @app.route("/session-analysis-result")
 def session_analysis_result_page():

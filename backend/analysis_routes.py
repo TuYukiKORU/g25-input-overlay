@@ -1,21 +1,51 @@
 """Routes for manually-triggered qualifying and race strategy analysis."""
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, render_template, request, redirect
+from math import isfinite
+from urllib.parse import urlencode
 from analysis_freshness import freshness
+from strategy_workspace import workspace_context
 
 
 def create_analysis_blueprint(storage, worker, latest):
     blueprint = Blueprint("strategy_analysis", __name__)
 
+    @blueprint.get("/strategy")
+    def strategy_page():
+        return render_template("strategy_workspace.html")
+
+    def old_page(goal):
+        arguments = request.args.to_dict()
+        arguments["goal"] = goal
+        return redirect("/strategy?" + urlencode(arguments))
+
     @blueprint.get("/analysis/qualifying")
     def qualifying_page():
-        return render_template("qualifying_analysis.html")
+        return old_page("qualifying")
 
     @blueprint.get("/analysis/race")
     def race_page():
-        return render_template("race_analysis.html")
+        return old_page("race")
+
+    @blueprint.get("/api/sessions/<session_id>/strategy-context")
+    def strategy_context(session_id):
+        track_id = request.args.get("track_id")
+        if not track_id or storage._safe_session_dir(session_id) is None:
+            return jsonify(error="Session and track are required"), 404
+        entries = []
+        for metadata in storage.list_laps():
+            if str(metadata.get("trackId")) == str(track_id):
+                lap = storage.load_lap(metadata["id"])
+                if lap:
+                    entries.append((metadata["id"], lap))
+        selected = request.args.get("selected_lap_id")
+        if selected and not any(lap_id == selected and str(lap_id).split("/", 1)[0] == session_id for lap_id, _ in entries):
+            return jsonify(error="Reference lap must belong to this session and track"), 400
+        return jsonify(workspace_context(entries, session_id, selected))
 
     def target(session_id, kind):
         body = request.get_json(silent=True) or {}
+        if not isinstance(body, dict):
+            return None, None, (jsonify(error="Analysis settings must be an object"), 400)
         track_id = body.get("track_id")
         if storage._safe_session_dir(session_id) is None:
             return None, None, (jsonify(error="Session not found"), 404)
@@ -24,10 +54,26 @@ def create_analysis_blueprint(storage, worker, latest):
         if not storage.session_track_laps(session_id, track_id):
             return None, None, (jsonify(error="Session and track have no saved laps"), 404)
         settings = {"selected_lap_id": body.get("selected_lap_id")}
+        if settings["selected_lap_id"] and not any(lap_id == settings["selected_lap_id"]
+                for lap_id, _ in storage.session_track_laps(session_id, track_id)):
+            return None, None, (jsonify(error="Reference lap must belong to this session and track"), 400)
         try:
+            for name in ("pace_window_percent", "max_laps", "start_soc", "current_soc", "minimum_soc",
+                         "minimum_finish_soc", "minimum_start_line_soc", "horizon", "remaining_laps"):
+                if body.get(name) not in (None, "") and not isfinite(float(body[name])):
+                    raise ValueError("Non-finite setting")
             settings["pace_window_percent"] = max(2.0, min(15.0, float(body.get("pace_window_percent", 8))))
             settings["max_laps"] = max(2, min(80, int(body.get("max_laps", 40))))
-            if kind == "qualifying":
+            if kind == "workspace":
+                settings.update(goal=body.get("goal", "race"), deployment_mode=body.get("deployment_mode", "boost"),
+                                horizon=max(3, min(5, int(body.get("horizon", 3)))),
+                                start_soc=None if body.get("start_soc") in (None, "") else max(0, min(100, float(body["start_soc"]))),
+                                minimum_soc=max(0, min(100, float(body.get("minimum_soc", 5)))),
+                                minimum_start_line_soc=max(0, min(100, float(body.get("minimum_start_line_soc", 80)))),
+                                remaining_laps=None if body.get("remaining_laps") in (None, "") else max(1, min(100, int(body["remaining_laps"]))))
+                if settings["goal"] not in ("race", "compare", "qualifying") or settings["deployment_mode"] not in ("boost", "overtake"):
+                    raise ValueError("Unknown goal or mode")
+            elif kind == "qualifying":
                 settings["start_soc"] = (None if body.get("start_soc") in (None, "") else
                                          max(0.0, min(100.0, float(body["start_soc"]))))
                 settings["minimum_start_line_soc"] = max(
@@ -46,7 +92,7 @@ def create_analysis_blueprint(storage, worker, latest):
 
     @blueprint.post("/api/sessions/<session_id>/analysis/<kind>")
     def start_strategy(session_id, kind):
-        if kind not in ("qualifying", "race"):
+        if kind not in ("qualifying", "race", "workspace"):
             return jsonify(error="Unknown strategy kind"), 404
         track_id, settings, error = target(session_id, kind)
         if error:
@@ -58,14 +104,14 @@ def create_analysis_blueprint(storage, worker, latest):
     @blueprint.get("/api/sessions/<session_id>/analysis/<kind>/status")
     def strategy_status(session_id, kind):
         track_id, analysis_id = request.args.get("track_id"), request.args.get("analysis_id")
-        if kind not in ("qualifying", "race") or not track_id or not analysis_id:
+        if kind not in ("qualifying", "race", "workspace") or not track_id or not analysis_id:
             return jsonify(error="kind, track_id and analysis_id are required"), 400
         return jsonify(worker.status(session_id, track_id, kind, analysis_id))
 
     @blueprint.get("/api/sessions/<session_id>/analysis/<kind>/result")
     def strategy_result(session_id, kind):
         track_id, analysis_id = request.args.get("track_id"), request.args.get("analysis_id")
-        if kind not in ("qualifying", "race") or not track_id or not analysis_id:
+        if kind not in ("qualifying", "race", "workspace") or not track_id or not analysis_id:
             return jsonify(error="kind, track_id and analysis_id are required"), 400
         result = storage.load_strategy_artifact(session_id, track_id, kind, analysis_id)
         return (jsonify(result | freshness(storage, result, track_id)), 200) if result else (jsonify(error="Analysis result is not available"), 404)

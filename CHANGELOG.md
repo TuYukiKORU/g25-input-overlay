@@ -2,6 +2,15 @@
 
 このファイルには、F1テレメトリー分析ツールへ加えた主な変更を記録します。
 
+## 2026-10-04
+
+- Reconstructed the extra screens as one Strategy workspace with Track plan, race energy, scenario comparison and qualifying energy. Lap analysis keeps its charts and workflows; session reports and corner definitions sit under Tools.
+- Share condition-matched source laps, one model and cached background jobs across goals. Keep map, battery curve, section actions and selected comparison aligned; require explicit recalculation after settings change.
+- Validate measured battery inputs independently of track geometry. Distance-based planning works without a map; 2025 recordings are detected and remain available in lap analysis, while the strategy model requires 2026 evidence.
+- Replaced the competing race planner, preserved full section-boundary time and SOC, rejected contradictory action associations, enforced reserves without borrowing battery and ranked comparisons only within a 0.25 percentage-point endpoint tolerance.
+- Record measured Y positions and use a shared planar X/Z frame for older session reports.
+- Verified 231 tests and saved-lap browser workflows. Rebuilt 0.3.3-strategy-preview and checked ZIP integrity/current bundled assets; Windows Application Control still blocks the native EXE launch. Energy predictions remain unvalidated in-game and exclude pits, traffic, weather changes and full-race tyre strategy.
+
 ## 2026-10-03
 
 - Audited all consumed UDP packet layouts against EA's Season 8 specifications and added replay coverage for both complete grids.

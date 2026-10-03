@@ -12,7 +12,7 @@ F1 25と2026 Season Packは受信パケットから自動判別します。Recor
 
 ### Windowsアプリ版（配布・ノートPCテスト）
 
-`releases/F1-Telemetry-0.3.2-udp-preview-windows-x64.zip` を全て展開し、
+`releases/F1-Telemetry-0.3.3-strategy-preview-windows-x64.zip` を全て展開し、
 `F1 Telemetry.exe` をダブルクリックすると専用ウィンドウで開きます。
 Pythonのインストールは不要です。WebView2 Runtimeが必要です。
 `Test previous laps.cmd` では実際の過去37周を別コピーで確認でき、記録は無効です。
@@ -22,7 +22,7 @@ Pythonのインストールは不要です。WebView2 Runtimeが必要です。
 英語版は [docs/LAPTOP_TEST.md](docs/LAPTOP_TEST.md)、
 完全なマニュアルは [日本語](docs/manual-ja.html) ／ [English](docs/manual-en.html)、測定した負荷は [docs/PERFORMANCE.md](docs/PERFORMANCE.md) です。
 
-友人向けの初回配布ZIPは `F1テレメトリー_初回配布版_v0.3.2_プレビュー_Windows64bit.zip`、説明書だけのZIPは `F1テレメトリー_使い方マニュアル_日本語・英語_v0.3.2.zip` です。展開後は `最初にお読みください.md` と `使い方_日本語.html` を開いてください。[リリース前レビュー](docs/リリース前レビュー_日本語.md) は旧0.3.1の検証結果です。0.3.2はパケット監査と213テストが通過し、EXEを再ビルドしましたが、Windows Application Controlにより新EXEの起動検証は未完了です。
+友人向けの初回配布ZIPは `F1テレメトリー_初回配布版_v0.3.3_プレビュー_Windows64bit.zip`、説明書だけのZIPは `F1テレメトリー_使い方マニュアル_日本語・英語_v0.3.3.zip` です。展開後は `最初にお読みください.md` と `使い方_日本語.html` を開いてください。[リリース前レビュー](docs/リリース前レビュー_日本語.md) は旧0.3.1の検証結果です。0.3.3は統合した戦略画面とバッテリー制約をソース版・自動テストで検証しています。Windows Application Controlにより新EXEの実ウィンドウ検証は未完了です。
 構造のレビューと今後の改善案は [docs/STRUCTURE_REVIEW.md](docs/STRUCTURE_REVIEW.md) を参照してください。
 
 開発環境からビルドする場合は `powershell -ExecutionPolicy Bypass -File scripts/Build-Desktop.ps1` を実行します。
@@ -78,10 +78,13 @@ Motion Exの `wheelSlipRatio` は符号の意味を断定せず、ホイール�
 - **Stint dashboard**: コンパウンド変更、タイヤ年齢や摩耗のリセット、ピット周回後を区切りとして、ラップタイム・開始燃料・開始摩耗・ERS残量を表示します。初期表示はクリーンラップのみです。`Include pit and invalid laps`で除外ラップも確認できます。記録だけではタイヤ交換を確認できない区切りは明記します。
 - **Setup comparison**: 折りたたみパネルに、選択ラップと比較ラップの保存済みセットアップの実際の差分を表示します。スナップショットがない旧記録には不足を表示します。Lap noteと補足パネルも折りたためます。
 - **Recording health**: ヘッダーの状態を開くと、Motion・Lap timing・Controls・Fuel/tyres/ERSなどの受信経過時間を確認できます。受信なし、受信中、古い受信を区別します。ゲームのポーズや終了でも古い受信になり、過去ラップの各サンプルの鮮度を保証する表示ではありません。
-- **Session analysis** (`/session-analysis`): セッションを分析し、ターン単位の速度・タイム差・改善候補を確認します。記録・セットアップ・コーナー定義・分析規則が変わった保存結果には再分析の案内を表示します。旧結果も更新対象です。表示中は15秒間隔で状態を確認します。予選・レース戦略も同様に確認し、選択や設定を変えた場合は再分析が必要です。
-- **Qualifying strategy** (`/analysis/qualifying`): 記録データに基づく予選向け戦略を確認します。
-- **Operation Library** (`/operation-library`): 記録された区間別の操作パターンを確認します。
-- **ERS Strategy** (`/ers-strategy`): ERSの使用・温存候補を確認します。推定結果は実走で検証してください。
+- **Strategy** (`/strategy`): レースのエネルギー計画、シナリオ比較、予選のエネルギー計画を同じセッション・コース・基準ラップで切り替えます。開始バッテリーと下限を設定して **Build plan** を押し、次の周の区間別操作と3〜5周のバッテリー予測を確認します。条件を変えたら再計算が必要です。
+- **Track reference / Sources and assumptions**: 同じコース・エディションと、記録されたコンパウンド・セットアップ・燃料・摩耗・天候等の近いラップを採用します。条件不明や除外理由を表示します。終了バッテリーが共通目標±0.25ポイント以内のシナリオだけ順位付けします。
+- **Tools → Session report** (`/session-analysis`): 走行後のターン比較・改善候補を確認します。旧X/Z記録は平面座標で分析し、実測Y座標を持つ新記録は3D座標を使います。コーナー定義の編集はコース設定ツールです。
+
+バッテリーとマップの可用性は別々に確認します。位置データが欠けても距離ベースのエネルギー計画を利用できます。戦略は2026エディションの記録が2周以上必要です。F1 25のラップ分析は引き続き利用できます。旧戦略URLは `/strategy` へ転送されます。
+
+予測は実走で未検証です。ピット・交通・天候変化・レース全体のタイヤ計画は対象外です。[構成とモデルのレビュー](docs/STRATEGY_WORKSPACE_REVIEW.md) を参照してください。
 
 ### 比較の読み方
 

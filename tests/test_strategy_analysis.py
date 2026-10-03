@@ -68,8 +68,8 @@ def test_shared_model_and_qualifying_dp_produce_soc_allocation():
 
 def test_shared_section_action_model_exposes_uniform_lift_and_deployment_predictions():
     value = model()
-    assert value["schema_version"] == 4
-    assert value["model_version"] == "phase1-section-actions-v4"
+    assert value["schema_version"] == 5
+    assert value["model_version"] == "condition-matched-section-actions-v5"
     assert value["action_catalog"]["lift_20"]["can_fund_follow_up"] == ["boost", "overtake"]
     required_actions = {"none", "lift_10", "lift_20", "lift_30", "boost", "overtake"}
     required_metrics = {

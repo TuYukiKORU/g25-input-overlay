@@ -9,6 +9,7 @@ from comparison_context import comparison_context
 from analysis_config import ANALYSIS_CONFIG
 from workspace_insights import wear_estimate
 from track_sections import analyze_track_sections
+from telemetry_quality import number, geometry_quality
 
 
 SECTION_M = 10.0
@@ -19,7 +20,7 @@ WHEELS = ("front_left", "front_right", "rear_left", "rear_right")
 def _number(value, default=None):
     try:
         value = float(value)
-        return value if value == value else default
+        return value if number(value) is not None else default
     except (TypeError, ValueError):
         return default
 
@@ -29,16 +30,19 @@ def _mean(values):
     return sum(values) / len(values) if values else None
 
 
-def _position(sample):
+def _position(sample, planar=False):
     position = sample.get("position") or {}
-    values = tuple(_number(position.get(axis)) for axis in ("x", "y", "z"))
+    values = (_number(position.get("x")), 0.0 if planar else _number(position.get("y")),
+              _number(position.get("z")))
     return values if all(value is not None for value in values) else None
 
 
-def _reference_line(lap):
+def _reference_line(lap, planar=None):
+    if planar is None:
+        planar = geometry_quality(lap.get("samples", [])).get("dimensions") != "3D"
     points = []
     for sample in sorted(lap.get("samples", []), key=lambda row: _number(row.get("lap_distance"), 0)):
-        position = _position(sample)
+        position = _position(sample, planar)
         if position is None:
             continue
         if not points or sum((position[i] - points[-1]["xyz"][i]) ** 2 for i in range(3)) >= 1.0:
@@ -103,12 +107,12 @@ def _wear(lap):
     return _mean(values)
 
 
-def _prepare_lap(lap_id, lap, line, track_length):
+def _prepare_lap(lap_id, lap, line, track_length, planar=False):
     projected = []
     source_distances = [point["source_distance"] for point in line]
     ordered_samples = sorted(lap.get("samples", []), key=lambda row: (_number(row.get("lap_time_ms"), float("inf")), _number(row.get("lap_distance"), 0)))
     for sample in ordered_samples:
-        position = _position(sample)
+        position = _position(sample, planar)
         hint = _number(sample.get("lap_distance"))
         if position and hint is not None:
             center = bisect_left(source_distances, hint)
@@ -306,14 +310,15 @@ def analyze_session(lap_entries, selected_lap_id=None, progress=None, section_se
     if not valid:
         return _unavailable("有効な完走ラップがありません", len(lap_entries))
     reference_id, reference_lap = min(valid, key=lambda item: _number(item[1].get("lapTimeMs"), float("inf")))
-    line, reason = _reference_line(reference_lap)
+    planar = any(geometry_quality(lap.get("samples", [])).get("dimensions") != "3D" for _, lap in valid)
+    line, reason = _reference_line(reference_lap, planar)
     if line is None:
         return _unavailable(reason, len(lap_entries))
     track_length = line[-1]["s"]
     report(18, "XYZ座標から基準走行ラインを生成中")
     prepared = []
     for index, entry in enumerate(lap_entries):
-        prepared.append(_prepare_lap(entry[0], entry[1], line, track_length))
+        prepared.append(_prepare_lap(entry[0], entry[1], line, track_length, planar))
         report(18 + int(32 * (index + 1) / len(lap_entries)), f"ラップ {entry[1].get('lapNumber', '?')} を10m間隔へ変換中")
     eligible = [item for item in prepared if item["eligible"]]
     if len(eligible) < 2:
@@ -412,6 +417,7 @@ def analyze_session(lap_entries, selected_lap_id=None, progress=None, section_se
         "schema_version": 1, "status": "completed", "analyzable": True,
         "generated_at": datetime.now(timezone.utc).isoformat(), "section_size_m": SECTION_M,
         "track_length_m": round(track_length, 1), "reference_line_points": len(line),
+        "coordinate_mode": "planar_xz" if planar else "measured_xyz",
         "selected_lap_id": selected["id"], "selected_lap_number": selected["lap_number"],
         "comparison_lap_id": compared["id"], "comparison_lap_number": compared["lap_number"],
         "comparison_reason": "Closest recorded compound, setup, starting fuel, wear and ERS conditions; missing values penalized",

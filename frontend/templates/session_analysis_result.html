@@ -14,7 +14,7 @@
     <div><p class="eyebrow">SESSION ANALYSIS</p><h1>Turn analysis result</h1><p id="targetLabel">分析結果を読み込んでいます…</p></div>
     <div><a id="adjustLink" href="/map-corners">View map &amp; corners</a></div>
   </header>
-  <nav class="page-tabs"><a href="/analysis">Lap analysis</a><a class="active" href="/session-analysis">Session analysis</a><a href="/analysis/qualifying">Qualifying strategy</a><a href="/operation-library">Operation Library</a><a href="/ers-strategy">ERS Strategy</a><details class="archive-nav"><summary>Archive</summary><div class="archive-nav-menu"><a href="/analysis/race">Race strategy <small>Multi-lap prototype</small></a><a href="/map-corners">Map &amp; Corners <small>Track definition</small></a></div></details></nav>
+  {% include "_page_nav.html" %}
 
   <section id="statusCard" class="card status-card">
     <div><span id="stateBadge" class="state">queued</span><strong id="statusText">分析状態を確認しています…</strong></div>
@@ -25,6 +25,7 @@
 
   <section id="resultContent" hidden>
     <p id="freshnessNotice" class="card unavailable" hidden></p>
+    <p id="coordinateNotice" hidden></p>
     <section id="summary" class="summary"></section>
     <section class="card toolbar"><div><h2>Corner-by-corner comparison</h2><p>正の値は選択ラップのタイムロス、負の値はゲインです。</p></div><button id="reanalyze" type="button">Reanalyze</button></section>
     <section id="unavailable" class="card unavailable" hidden></section>

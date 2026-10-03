@@ -10,6 +10,7 @@ from qualifying_optimizer import analyze_qualifying
 from race_optimizer import analyze_race
 from strategy_model import build_strategy_model
 from analysis_freshness import source_signature, freshness
+from strategy_workspace import analyze_workspace
 
 
 def _now():
@@ -20,6 +21,7 @@ class StrategyWorker:
     def __init__(self, storage):
         self.storage = storage
         self._jobs = {}
+        self._models = {}
         self._lock = threading.RLock()
         self._queue = queue.Queue()
         threading.Thread(target=self._run, daemon=True, name="strategy-analysis-worker").start()
@@ -29,7 +31,7 @@ class StrategyWorker:
         laps = [{"id": lap["id"], "time": lap.get("lapTimeMs"), "samples": lap.get("sampleCount"),
                  "created": lap.get("createdAt")}
                 for lap in self.storage.list_laps() if str(lap.get("trackId")) == str(track_id)]
-        payload = {"schema": 4, "model": "phase1-section-actions-v4", "kind": kind,
+        payload = {"schema": 5, "model": "condition-matched-section-actions-v5", "kind": kind,
                    "source_signature": signature,
                    "session": session_id, "track": str(track_id), "settings": settings, "laps": laps}
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -87,23 +89,32 @@ class StrategyWorker:
                     if lap:
                         entries.append((metadata["id"], lap))
                 self._set(key, progress=25, current="共通セクション予測モデルを作成中")
-                model = build_strategy_model(
-                    entries, selected_session_id=session_id,
-                    selected_lap_id=settings.get("selected_lap_id"),
-                    track_profile=self.storage.load_track_profile(track_id),
-                    pace_window_percent=settings.get("pace_window_percent", 8),
-                    max_laps=settings.get("max_laps", 40))
+                model_key = (signature, session_id, str(track_id), settings.get("selected_lap_id"),
+                             settings.get("pace_window_percent", 8), settings.get("max_laps", 40))
+                model = self._models.get(model_key)
+                if model is None:
+                    model = build_strategy_model(
+                        entries, selected_session_id=session_id,
+                        selected_lap_id=settings.get("selected_lap_id"),
+                        track_profile=self.storage.load_track_profile(track_id),
+                        pace_window_percent=settings.get("pace_window_percent", 8),
+                        max_laps=settings.get("max_laps", 40))
+                    if len(self._models) >= 4:
+                        self._models.pop(next(iter(self._models)))
+                    self._models[model_key] = model
                 if not model.get("analyzable"):
                     raise ValueError(model.get("reason") or "戦略モデルを作成できませんでした")
                 self._set(key, progress=70, current="ERS配分を最適化中")
-                if kind == "qualifying":
+                if kind == "workspace":
+                    result = analyze_workspace(model, settings)
+                elif kind == "qualifying":
                     result = analyze_qualifying(model, settings.get("start_soc"),
                                                 settings.get("minimum_finish_soc", 5),
                                                 settings.get("minimum_start_line_soc", 80))
                 else:
                     result = analyze_race(model, settings.get("horizon", 5), settings.get("current_soc"),
                                           settings.get("minimum_soc", 5), settings.get("remaining_laps"))
-                result.update({"schema_version": 4, "analysis_id": analysis_id, "analysis_kind": kind,
+                result.update({"schema_version": 5, "analysis_id": analysis_id, "analysis_kind": kind,
                                "source_signature": signature,
                                "session_id": session_id, "track_id": model.get("track_id"),
                                "settings": settings, "generated_at": _now()})

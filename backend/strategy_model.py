@@ -4,6 +4,8 @@ from collections import Counter, defaultdict
 from statistics import median
 
 from operation_sections import analyze_operation_sections, build_operation_library
+from telemetry_quality import number, select_strategy_laps, prediction_is_usable
+from comparison_context import conditions
 
 
 DEPLOYMENT_ACTIONS = ("boost", "overtake")
@@ -25,7 +27,7 @@ ACTION_CATALOG = {
 def _number(value, default=None):
     try:
         value = float(value)
-        return value if value == value else default
+        return value if number(value) is not None else default
     except (TypeError, ValueError):
         return default
 
@@ -49,12 +51,16 @@ def _rows(lap):
         if distance is None or elapsed is None:
             continue
         soc = _number(sample.get("ers_soc"), _number(sample.get("ers_percent")))
+        if soc is None or not 0 <= soc <= 100:
+            continue
+        speed, throttle, brake = (_number(sample.get(key)) for key in ("speed", "throttle", "brake"))
+        if any(value is None for value in (speed, throttle, brake)):
+            continue
         wear = sample.get("tyre_wear") or {}
         slips = sample.get("wheel_slip_ratio") or {}
         rows.append({
-            "s": distance, "t": elapsed, "speed": _number(sample.get("speed"), 0.0),
-            "throttle": _number(sample.get("throttle"), 0.0),
-            "brake": _number(sample.get("brake"), 0.0),
+            "s": distance, "t": elapsed, "speed": speed,
+            "throttle": throttle, "brake": brake,
             "accel": _number(sample.get("longitudinal_g")), "soc": soc,
             "fuel": _number(sample.get("fuel_in_tank_kg")),
             "mguk": _number(sample.get("ers_mguk_power")),
@@ -138,7 +144,7 @@ def _observation(item, section):
         "action": deployment if deployment != "none" else lift_action,
         "deployment_action": deployment, "lift_action": lift_action, "lift_ratio": lift_ratio,
         "raw_time_ms": raw_time,
-        "normalized_time_ms": raw_time * item["best_time"] / item["lap_time"],
+        "normalized_time_ms": raw_time * item["best_time"] / item["sample_elapsed_ms"],
         "soc_delta": ((end_soc - start_soc) if start_soc is not None and end_soc is not None else None),
         "start_soc": start_soc, "end_soc": end_soc,
         "entry_speed": _at(rows, start, "speed"), "exit_speed": _at(rows, end, "speed"),
@@ -259,8 +265,12 @@ def _action_prediction(observations, action, none_prediction=None):
 def build_strategy_model(lap_entries, selected_session_id=None, selected_lap_id=None, track_profile=None,
                          pace_window_percent=8.0, max_laps=40):
     """Build one reusable statistical model for qualifying and race optimizers."""
+    selected, selection = select_strategy_laps(lap_entries, selected_session_id, selected_lap_id,
+                                               pace_window_percent, max_laps)
+    if selection.get("reason"):
+        return {"analyzable": False, "reason": selection["reason"], "selection": selection}
     eligible = []
-    for lap_id, lap in lap_entries:
+    for lap_id, lap in selected:
         lap_time = _number(lap.get("lapTimeMs"))
         rows = _rows(lap)
         season_pack = (lap.get("packetFormat") == 2026 or lap.get("gameYear") == 26
@@ -278,11 +288,8 @@ def build_strategy_model(lap_entries, selected_session_id=None, selected_lap_id=
     best_time = eligible[0]["lap_time"]
     for item in all_eligible:
         item["best_time"] = best_time
+        item["sample_elapsed_ms"] = max(1, item["rows"][-1]["t"] - item["rows"][0]["t"])
         item["clip_threshold"] = _clip_threshold(item["rows"])
-    cutoff = best_time * (1 + pace_window_percent / 100)
-    eligible = [item for item in eligible if item["lap_time"] <= cutoff][:max_laps]
-    if len(eligible) < 2:
-        return {"analyzable": False, "reason": "指定ペース内の有効ラップが不足しています"}
     library = build_operation_library([(item["id"], item["lap"]) for item in eligible],
                                       pace_window_percent=pace_window_percent,
                                       max_laps=max_laps)
@@ -296,6 +303,15 @@ def build_strategy_model(lap_entries, selected_session_id=None, selected_lap_id=
             return {"analyzable": False, "reason": fallback.get("reason")}
         definitions, geometry = fallback["sections"], [
             {key: point.get(key) for key in ("s", "x", "z")} for point in fallback.get("points", [])]
+    geometry_status = library["geometry"] if library.get("analyzable") else fallback["geometry"]
+    if not geometry_status.get("available"):
+        geometry = []
+    # Resampled input runs are separated by one sample step. Partition those
+    # boundaries continuously so the planner does not omit time or energy.
+    boundaries = [0.0] + [(a["end_distance"] + b["start_distance"]) / 2
+                         for a, b in zip(definitions, definitions[1:])] + [eligible[0]["rows"][-1]["s"]]
+    definitions = [definition | {"start_distance": boundaries[index], "end_distance": boundaries[index+1]}
+                   for index, definition in enumerate(definitions)]
 
     sections = []
     all_observations = []
@@ -305,7 +321,8 @@ def build_strategy_model(lap_entries, selected_session_id=None, selected_lap_id=
         observations = [value for item in eligible
                         if (value := _observation(item, definition)) is not None]
         if not observations:
-            continue
+            return {"analyzable": False, "reason": "Recorded samples do not cover every input section sufficiently.",
+                    "selection": selection}
         none = _action_prediction(observations, "none")
         if none is None:
             none = _complete_prediction({
@@ -363,6 +380,8 @@ def build_strategy_model(lap_entries, selected_session_id=None, selected_lap_id=
         else:
             personal = {"status": "insufficient_samples", "samples": len(personal_rows)}
         model_section["actions"] = actions
+        for action in ACTIONS:
+            actions[action]["usable_for_plan"] = prediction_is_usable(model_section, action)
         model_section["personal"] = personal
         model_section["observation_count"] = len(observations)
         sections.append(model_section)
@@ -386,9 +405,9 @@ def build_strategy_model(lap_entries, selected_session_id=None, selected_lap_id=
     reference_section_time = (sum(session_section_times.get(session_best["id"], [])) if session_best else 0)
     coverage_scale = (session_best["lap_time"] / reference_section_time
                       if session_best and reference_section_time > 0 else 1.0)
+    ideal_time = round(sum(section["raw_time_ms"] for section in ideal_sections) * coverage_scale, 1)
     for section in ideal_sections:
         section["predicted_time_ms"] = round(section.pop("raw_time_ms") * coverage_scale, 1)
-    ideal_time = round(sum(section["predicted_time_ms"] for section in ideal_sections), 1)
     ideal_lap = {
         "analyzable": bool(session_best and len(ideal_sections) == len(sections)),
         "method": "best_observed_section_composite", "session_id": selected_session_id,
@@ -402,22 +421,28 @@ def build_strategy_model(lap_entries, selected_session_id=None, selected_lap_id=
     initial_soc = _median([item["rows"][0]["soc"] for item in eligible if item["rows"][0]["soc"] is not None], 100)
     finish_soc = _median([item["rows"][-1]["soc"] for item in eligible if item["rows"][-1]["soc"] is not None], initial_soc)
     selected_items = [item for item in eligible if item["session"] == selected_session_id]
-    current = next((item for item in eligible if item["id"] == selected_lap_id), None)
+    reference_id = selection["reference_lap_id"]
+    reference_lap = next(lap for lap_id, lap in lap_entries if lap_id == reference_id)
+    current = {"id": reference_id, "lap": reference_lap, "rows": _rows(reference_lap)}
     if current is None:
         current_pool = selected_items or eligible
         current = max(current_pool, key=lambda item: item["lap"].get("createdAt", ""))
     personal_available = sum(section["personal"]["status"] == "available" for section in sections)
     return {
         "analyzable": bool(sections), "reason": None if sections else "共通セクションを作成できませんでした",
-        "schema_version": 4, "model_version": "phase1-section-actions-v4",
+        "schema_version": 5, "model_version": "condition-matched-section-actions-v5",
         "action_catalog": ACTION_CATALOG,
         "track_id": eligible[0]["lap"].get("trackId"), "track_length_m": round(eligible[0]["rows"][-1]["s"], 1),
         "best_lap_time_ms": round(best_time), "initial_soc": round(initial_soc, 2),
         "historical_finish_soc": round(finish_soc, 2), "sections": sections, "track_points": geometry,
+        "geometry": geometry_status, "geometry_source_lap_id": library.get("geometry_source_lap_id"),
+        "selection": selection,
         "ideal_lap": ideal_lap,
         "source": {"eligible_laps": len(eligible), "sessions": len({item["session"] for item in eligible}),
                    "pace_window_percent": pace_window_percent,
-                   "lap_ids": [item["id"] for item in eligible]},
+                   "lap_ids": [item["id"] for item in eligible],
+                   "laps": [{"id": item["id"], "lap_number": item["lap"].get("lapNumber"),
+                             "lap_time_ms": item["lap_time"], "conditions": conditions(item["lap"])} for item in eligible]},
         "personal": {"status": "available" if personal_available else "insufficient_samples",
                      "available_sections": personal_available, "selected_session": selected_session_id},
         "current_state": {

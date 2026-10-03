@@ -1,4 +1,5 @@
 """SOC-constrained single-lap DP and 3-5 lap receding-horizon strategy."""
+from telemetry_quality import prediction_is_usable, number
 
 
 DEPLOYMENT_ACTIONS = ("boost", "overtake")
@@ -8,7 +9,7 @@ LIFT_ACTIONS = ("lift_10", "lift_20", "lift_30")
 def _number(value, default=0.0):
     try:
         value = float(value)
-        return value if value == value else default
+        return value if number(value) is not None else default
     except (TypeError, ValueError):
         return default
 
@@ -37,6 +38,8 @@ def _options(section, scenario, deployment_mode="boost"):
     if scenario == "lift_and_deploy" and kind in ("lift", "acceleration", "flat_out"):
         actions.extend(LIFT_ACTIONS)
     for action in actions:
+        if not prediction_is_usable(section, action):
+            continue
         source = section["actions"][action]
         confidence = _number(source.get("confidence"), 0.0)
         if action == "overtake" and (source.get("evidence") != "observed" or confidence < .35):
@@ -70,6 +73,8 @@ def _simulate_none(model, start_soc, horizon):
 def _optimize_path(model, start_soc, target_soc, scenario, horizon=1, soc_step=.25,
                    minimum_running_soc=0.0, deployment_mode="boost"):
     sections = model["sections"]
+    if start_soc < minimum_running_soc:
+        return None
     states = {round(start_soc / soc_step): {
         "objective": 0.0, "time_ms": 0.0, "soc": start_soc, "path": [],
     }}
@@ -80,10 +85,7 @@ def _optimize_path(model, start_soc, target_soc, scenario, horizon=1, soc_step=.
                 for action, fraction, prediction in _options(section, scenario, deployment_mode):
                     next_soc = state["soc"] + prediction["soc_delta"]
                     if next_soc < -.001:
-                        if minimum_running_soc <= 0:
-                            next_soc = 0.0
-                        else:
-                            continue
+                        continue
                     if state["soc"] < minimum_running_soc:
                         if action in DEPLOYMENT_ACTIONS or next_soc + .001 < state["soc"]:
                             continue
@@ -204,9 +206,9 @@ def _summarize_path(model, state, start_soc, target_soc, horizon, baseline_time)
 
 
 def _run_scenario(model, identifier, label, start_soc, target_soc, horizon, baseline_time,
-                  deployment_mode):
+                  deployment_mode, minimum_soc=0):
     state = _optimize_path(model, start_soc, target_soc, identifier, horizon,
-                           deployment_mode=deployment_mode)
+                           deployment_mode=deployment_mode, minimum_running_soc=minimum_soc)
     if state is None:
         return {"id": identifier, "label": label, "analyzable": False,
                 "reason": "SOC制約を満たす経路がありません"}
@@ -214,7 +216,7 @@ def _run_scenario(model, identifier, label, start_soc, target_soc, horizon, base
     return {"id": identifier, "label": label, "analyzable": True, **result}
 
 
-def compare_strategy_scenarios(model, start_soc=None, deployment_mode="boost"):
+def compare_strategy_scenarios(model, start_soc=None, deployment_mode="boost", minimum_soc=0):
     """Optimize three one-lap scenarios at the same start and finish SOC."""
     if not model.get("analyzable"):
         return {"analyzable": False, "reason": model.get("reason")}
@@ -229,19 +231,24 @@ def compare_strategy_scenarios(model, start_soc=None, deployment_mode="boost"):
         ("lift_and_deploy", f"Lift + {mode_label}"),
     )
     scenarios = [_run_scenario(model, identifier, label, start_soc, target_soc, 1, baseline_time,
-                               deployment_mode)
+                               deployment_mode, minimum_soc)
                  for identifier, label in specifications]
-    valid = [row for row in scenarios if row.get("analyzable")]
-    fastest = min(valid, key=lambda row: row["predicted_total_time_ms"])
+    for row in scenarios:
+        row["comparable"] = bool(row.get("analyzable") and abs(row["finish_soc_error"]) <= .25)
+    valid = [row for row in scenarios if row.get("comparable")]
+    fastest = min(valid, key=lambda row: row["predicted_total_time_ms"], default=None)
     lift = next(row for row in scenarios if row["id"] == "lift_and_deploy")
     return {
-        "analyzable": True, "method": "same-finish-soc-section-dp-v2", "is_optimized": True,
+        "analyzable": any(row.get("analyzable") for row in scenarios),
+        "reason": None if any(row.get("analyzable") for row in scenarios) else "Battery reserve constraints cannot be met.",
+        "method": "same-finish-soc-section-dp-v2", "is_optimized": True,
         "deployment_mode": deployment_mode,
         "soc_step": .25, "start_soc": round(start_soc, 2), "common_finish_soc": round(target_soc, 2),
-        "scenarios": scenarios, "fastest_scenario": fastest["id"],
-        "estimated_best_gain_ms": fastest["net_gain_vs_no_deployment_ms"],
+        "scenarios": scenarios, "finish_soc_tolerance": .25,
+        "fastest_scenario": fastest["id"] if fastest else None,
+        "estimated_best_gain_ms": fastest["net_gain_vs_no_deployment_ms"] if fastest else None,
         "conclusion": ("Liftで回収したSOCの再配置により短縮見込みがあります。"
-                       if lift.get("net_gain_vs_no_deployment_ms", 0) > 0
+                       if lift.get("comparable") and lift.get("net_gain_vs_no_deployment_ms", 0) > 0
                        else "同一終了SOCでは追加リフトの利益を確認できません。"),
     }
 
@@ -272,11 +279,11 @@ def optimize_multi_lap_strategy(model, horizon=5, remaining_laps=None, start_soc
         model.get("initial_soc", 100.0))))
     baseline_time, baseline_finish, baseline_trajectory = _simulate_none(model, start_soc, horizon)
     finishing_race = remaining_laps is not None and remaining_laps <= horizon
-    requested_finish_soc = max(0.0, min(start_soc, float(minimum_finish_soc)))
+    requested_finish_soc = max(0.0, min(100.0, float(minimum_finish_soc)))
     minimum_reachable_soc = _minimum_reachable_soc(model, start_soc, horizon, deployment_mode)
     target_soc = (max(requested_finish_soc, minimum_reachable_soc)
-                  if finishing_race else baseline_finish)
-    safety_soc_floor = max(0.0, min(30.0, float(minimum_finish_soc)))
+                  if finishing_race else max(baseline_finish, requested_finish_soc))
+    safety_soc_floor = requested_finish_soc
     state = _optimize_path(model, start_soc, target_soc, "lift_and_deploy", horizon,
                            soc_step=.5, minimum_running_soc=safety_soc_floor,
                            deployment_mode=deployment_mode)
