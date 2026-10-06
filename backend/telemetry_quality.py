@@ -64,7 +64,7 @@ def lap_quality(lap):
             "track_length_m": distances[-1] if distances else None}
 
 
-def compatible_conditions(reference, candidate):
+def compatible_conditions(reference, candidate, match_race_length=False):
     """Reject recorded mismatches; disclose missing fields rather than inventing them."""
     a, b = conditions(reference), conditions(candidate)
     unknown = []
@@ -73,7 +73,7 @@ def compatible_conditions(reference, candidate):
             unknown.append(key)
         elif (a[key] != b[key] if tolerance is None else abs(a[key] - b[key]) > tolerance):
             return False, f"different_{key}", unknown
-    for key in ("weather", "sessionType"):
+    for key in ("weather", "sessionType", *(("totalLaps",) if match_race_length else ())):
         if reference.get(key) is None or candidate.get(key) is None:
             unknown.append(key)
         elif reference[key] != candidate[key]:
@@ -82,7 +82,7 @@ def compatible_conditions(reference, candidate):
 
 
 def select_strategy_laps(entries, selected_session_id=None, selected_lap_id=None,
-                         pace_window_percent=8, max_laps=40):
+                         pace_window_percent=8, max_laps=40, learning=False):
     reference = next((item for item in entries if item[0] == selected_lap_id), None)
     candidates = [item for item in entries if lap_edition(item[1]) == 2026 and lap_quality(item[1])["energy"]["available"]]
     if reference is None:
@@ -112,7 +112,7 @@ def select_strategy_laps(entries, selected_session_id=None, selected_lap_id=None
         if abs(other["track_length_m"] - quality["track_length_m"]) > max(100, quality["track_length_m"] * .03):
             excluded["different_track_length"] += 1
             continue
-        match, reason, missing = compatible_conditions(lap, candidate)
+        match, reason, missing = compatible_conditions(lap, candidate, match_race_length=learning)
         if not match:
             excluded[reason] += 1
             continue
@@ -120,11 +120,12 @@ def select_strategy_laps(entries, selected_session_id=None, selected_lap_id=None
         matched.append(item)
     matched.sort(key=lambda item: item[1]["lapTimeMs"])
     cutoff = matched[0][1]["lapTimeMs"] * (1 + pace_window_percent / 100) if matched else 0
-    fast = [item for item in matched if item[1]["lapTimeMs"] <= cutoff]
+    fast = matched if learning else [item for item in matched if item[1]["lapTimeMs"] <= cutoff]
     excluded["outside_pace_window"] = len(matched) - len(fast)
-    selected = fast[:max_laps]
+    selected = fast if learning else fast[:max_laps]
     info.update(excluded=dict(excluded), unknown_conditions=sorted(unknown), comparable_lap_count=len(fast),
-                reason=None if len(selected) >= 2 else "At least two laps with compatible recorded conditions are required.")
+                learning=learning,
+                reason=None if len(selected) >= (1 if learning else 2) else "At least two laps with compatible recorded conditions are required.")
     return selected, info
 
 

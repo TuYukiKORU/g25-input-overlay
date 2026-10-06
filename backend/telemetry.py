@@ -397,6 +397,25 @@ def udp_loop(latest, recorder=None, sock=None, stop_event=None):
             lap_distance = struct.unpack_from("<f", data, offset + 20)[0]
             if not math.isfinite(lap_distance):
                 continue
+            session_time = struct.unpack_from("<f", data, 15)[0]
+            if not math.isfinite(session_time):
+                continue
+            previous_clock = latest.get("lap_packet_session_time")
+            if previous_clock is not None and session_time < previous_clock - .001:
+                # Other packet groups may still describe the undone future.
+                # Leave missing measurements until their restored packets arrive.
+                for key in ("speed", "throttle_raw", "brake_raw", "world_position_x",
+                            "world_position_y", "world_position_z", "longitudinal_g",
+                            "wheel_speed", "wheel_slip_ratio", "tyres_wear", "tyres_age_laps",
+                            "fuel_in_tank_kg", "fuel_remaining_laps", "ers_store_energy_j",
+                            "ers_percent", "ers_mguk_power", "ers_mode", "boost_active",
+                            "overtake_active", "overtake_available", "aero_mode", "aero", "drs",
+                            "active_aero_available", "active_aero_activation_distance",
+                            "overtake_activation_distance", "regulations_2026"):
+                    latest[key] = copy.deepcopy(DEFAULT_TELEMETRY_STATE.get(key))
+                latest["telemetry2_received"] = False
+                latest["ers_percent"] = None
+            latest["lap_packet_session_time"] = session_time
             latest["last_lap_time_ms"] = struct.unpack_from("<I", data, offset)[0]
             # F1 25/26 LapData includes minute parts for sector/delta fields.
             # This places lapDistance at 20, currentLapNum at 33, pitStatus at

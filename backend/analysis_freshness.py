@@ -15,7 +15,7 @@ def rules_signature():
     names = ("analysis_config.py", "lap_analyzer.py", "comparison_context.py", "session_analysis.py",
              "workspace_insights.py", "track_sections.py", "strategy_model.py", "strategy_scenarios.py",
              "qualifying_optimizer.py", "race_optimizer.py", "operation_sections.py", "ers_strategy.py",
-             "telemetry_quality.py", "strategy_workspace.py")
+             "telemetry_quality.py", "strategy_workspace.py", "strategy_learning.py")
     digest = hashlib.sha256()
     for name in names:
         digest.update((root / name).read_bytes())

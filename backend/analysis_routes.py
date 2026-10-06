@@ -40,7 +40,7 @@ def create_analysis_blueprint(storage, worker, latest):
         selected = request.args.get("selected_lap_id")
         if selected and not any(lap_id == selected and str(lap_id).split("/", 1)[0] == session_id for lap_id, _ in entries):
             return jsonify(error="Reference lap must belong to this session and track"), 400
-        return jsonify(workspace_context(entries, session_id, selected))
+        return jsonify(workspace_context(entries, session_id, selected, learning=request.args.get("goal") == "practice"))
 
     def target(session_id, kind):
         body = request.get_json(silent=True) or {}
@@ -71,14 +71,15 @@ def create_analysis_blueprint(storage, worker, latest):
                                 minimum_soc=max(0, min(100, float(body.get("minimum_soc", 5)))),
                                 minimum_start_line_soc=max(0, min(100, float(body.get("minimum_start_line_soc", 80)))),
                                 remaining_laps=None if body.get("remaining_laps") in (None, "") else max(1, min(100, int(body["remaining_laps"]))))
-                if settings["goal"] not in ("race", "compare", "qualifying") or settings["deployment_mode"] not in ("boost", "overtake"):
+                if settings["goal"] not in ("race", "compare", "qualifying", "practice") or settings["deployment_mode"] not in ("boost", "overtake"):
                     raise ValueError("Unknown goal or mode")
+                if settings["goal"] == "qualifying":
+                    settings.update(start_soc=100.0, minimum_soc=0.0, minimum_start_line_soc=100.0,
+                                    deployment_mode="overtake")
+                elif settings["goal"] == "race" and settings["start_soc"] is not None and settings["start_soc"] % 10:
+                    raise ValueError("Race starting battery must use 10 percentage-point steps")
             elif kind == "qualifying":
-                settings["start_soc"] = (None if body.get("start_soc") in (None, "") else
-                                         max(0.0, min(100.0, float(body["start_soc"]))))
-                settings["minimum_start_line_soc"] = max(
-                    50.0, min(100.0, float(body.get("minimum_start_line_soc", 80))))
-                settings["minimum_finish_soc"] = max(0.0, min(50.0, float(body.get("minimum_finish_soc", 5))))
+                settings.update(start_soc=100.0, minimum_start_line_soc=100.0, minimum_finish_soc=0.0)
             else:
                 settings["horizon"] = max(3, min(5, int(body.get("horizon", 5))))
                 settings["current_soc"] = (None if body.get("current_soc") in (None, "") else

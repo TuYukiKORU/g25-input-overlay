@@ -4,6 +4,7 @@ import logging
 import queue
 import threading
 from datetime import datetime, timezone
+from uuid import uuid4
 from analysis_config import ANALYSIS_CONFIG, tyre_values
 from session_names import game_mode_name, session_type_name
 
@@ -14,6 +15,10 @@ class LapRecorder:
         self.storage = storage
         self.current = None
         self.last_distance = None
+        self._previous_lap = None
+        self._session_key = None
+        self._last_clock = None
+        self._last_timing = None
         self._queue = queue.Queue(maxsize=8)
         self._status_lock = threading.Lock()
         self._save_errors = 0
@@ -25,7 +30,7 @@ class LapRecorder:
         with self._status_lock:
             return {"ok": not (self._save_errors or self._queue_overflows),
                     "save_errors": self._save_errors, "queue_overflows": self._queue_overflows,
-                    "pending_laps": self._queue.qsize()}
+                    "pending_laps": self._queue.unfinished_tasks}
 
     def _save_failed(self, overflow=False):
         with self._status_lock:
@@ -38,7 +43,8 @@ class LapRecorder:
         while True:
             lap = self._queue.get()
             try:
-                self.storage.save_lap(lap)
+                if not lap.pop("_needs_finalize", False) or self._finalize_lap(lap):
+                    self.storage.save_lap(lap)
             except Exception:
                 self._save_failed()
                 logging.exception("Could not persist completed lap")
@@ -63,9 +69,40 @@ class LapRecorder:
         track_id = state.get("track_id")
         if not isinstance(track_id, int) or track_id < 0:
             return
-        session_key = (state.get("session_uid"), track_id, state.get("session_link_identifier"))
-        if self.current and session_key != self.current["_session_key"]:
+        session_key = (state.get("session_uid"), track_id, state.get("session_link_identifier"), state.get("session_type"))
+        if session_key != self._session_key:
             self.current = None; self.last_distance = None
+            self._previous_lap = None
+            self._last_clock = None
+            self._last_timing = None
+            self._session_key = session_key
+        clock = state.get("lap_packet_session_time")
+        clock_rewound = (clock is not None and self._last_clock is not None
+                         and clock < self._last_clock - .001)
+        elapsed = state.get("current_lap_time_ms") or 0
+        timing_rewound = bool(self.current and self._last_timing
+                              and lap_no == self.current["lapNumber"]
+                              and elapsed < self._last_timing[1]
+                              and distance <= self._last_timing[0])
+        # The session clock distinguishes a flashback near the start line from
+        # a Time Trial lap whose number did not change at the crossing.
+        rewind = clock_rewound or (clock is None and timing_rewound
+                                  and not (distance < 100 and self.last_distance is not None
+                                           and self.last_distance > 1000
+                                           and state.get("session_type") not in (15, 16, 17)))
+        if self.current and lap_no < self.current["lapNumber"]:
+            # Never finish a lap using timing from an earlier lap. A short
+            # flashback across the line can reuse the previous lap's prefix.
+            previous = self._previous_lap
+            self.current = (self._lap_snapshot(previous) if previous
+                            and previous["lapNumber"] == lap_no
+                            and (clock_rewound or clock is None) else None)
+            self.last_distance = None
+            rewind = self.current is not None
+        if self.current and rewind and lap_no == self.current["lapNumber"]:
+            self._splice_rewind(state)
+        self._last_clock = clock
+        self._last_timing = (distance, elapsed)
         season_pack = (state.get("packet_format") == 2026 or state.get("game_year") == 26
                        or state.get("game_version") == "F1 26")
         if self.current and season_pack:
@@ -119,6 +156,8 @@ class LapRecorder:
                             "weekendLinkIdentifier": state.get("weekend_link_identifier"),
                             "sessionLinkIdentifier": state.get("session_link_identifier"),
                             "_carSetup": copy.deepcopy(state.get("car_setup")),
+                            "recordingId": uuid4().hex, "recordingRevision": 0,
+                            "rewindCount": 0, "rewindSplices": [],
                             "lapNumber": lap_no, "lapTimeMs": 0, "validLap": True,
                             "tyreCompound": state.get("tyre_compound"),
                             "fuelInTankKgAtStart": state.get("fuel_in_tank_kg"),
@@ -129,8 +168,34 @@ class LapRecorder:
             self.current["_carSetup"] = copy.deepcopy(state["car_setup"])
         if state.get("pit_status") or state.get("lap_invalid"):
             self.current["validLap"] = False
+            self.current.setdefault("_invalid_at_ms", elapsed)
         if self.last_distance is None or distance - self.last_distance >= ANALYSIS_CONFIG["sample_distance_m"]:
             self.current["samples"].append(self._sample(state)); self.last_distance = distance
+
+    def _splice_rewind(self, state):
+        """Replace the undone suffix with the game's restored timeline."""
+        lap = self.current
+        distance, elapsed = state["lap_distance"], state.get("current_lap_time_ms") or 0
+        samples = lap["samples"]
+        old_distance = samples[-1]["lap_distance"] if samples else distance
+        old_time = samples[-1].get("lap_time_ms") if samples else elapsed
+        # Both clocks must fit; keep no duplicate endpoint and invent no data.
+        retained = [sample for sample in samples if sample["lap_distance"] < distance
+                    and (sample.get("lap_time_ms") or 0) < elapsed]
+        lap["samples"] = retained
+        lap["rewindCount"] += 1
+        lap["rewindSplices"].append({"fromDistanceM": old_distance, "toDistanceM": distance,
+                                     "fromTimeMs": old_time, "toTimeMs": elapsed,
+                                     "removedSamples": len(samples) - len(retained)})
+        if lap.get("_invalid_at_ms", float("inf")) >= elapsed:
+            lap.pop("_invalid_at_ms", None)
+        lap["validLap"] = "_invalid_at_ms" not in lap
+        if not retained:
+            lap.update(fuelInTankKgAtStart=state.get("fuel_in_tank_kg"),
+                       tyreAgeLapsAtStart=state.get("tyres_age_laps"),
+                       tyreWearAtStart=tyre_values(state.get("tyres_wear")))
+        # Always sample the restored endpoint, even for a sub-5m rewind.
+        self.last_distance = None
 
     def _sample(self, state):
         season_pack = (state.get("packet_format") == 2026 or state.get("game_year") == 26
@@ -170,6 +235,28 @@ class LapRecorder:
     def _finish(self, next_state):
         lap = self.current
         lap["lapTimeMs"] = int(next_state.get("last_lap_time_ms") or (lap["samples"][-1].get("lap_time_ms") if lap["samples"] else 0) or 0)
+        lap["recordingRevision"] += 1
+        self._previous_lap = self._lap_snapshot(lap)
+        lap.pop("_session_key", None)
+        lap.pop("_invalid_at_ms", None)
+        lap["_needs_finalize"] = True
+        # Transfer ownership of this completed attempt. The receiver starts a
+        # new lap; rewinds copy containers before trimming or appending. Sample
+        # dictionaries are immutable after capture, so no full deep copy is needed.
+        try: self._queue.put_nowait(lap)
+        except queue.Full:
+            self._save_failed(overflow=True)
+            logging.error("Lap %s was not saved: lap writer queue is full", lap["lapNumber"])
+        self.current = None; self.last_distance = None
+
+    @staticmethod
+    def _lap_snapshot(lap):
+        """Copy mutable containers while sharing immutable captured samples."""
+        return lap | {"samples": list(lap["samples"]),
+                      "rewindSplices": list(lap["rewindSplices"])}
+
+    def _finalize_lap(self, lap):
+        """Compute summaries and completeness only on the background writer."""
         lap["tyreWearAtEnd"] = lap["samples"][-1]["tyre_wear"] if lap["samples"] else tyre_values([])
         lap["fuelInTankKgAtEnd"] = (lap["samples"][-1].get("fuel_in_tank_kg")
                                      if lap["samples"] else None)
@@ -201,10 +288,4 @@ class LapRecorder:
             for index, sample in enumerate(lap["samples"]) if index > 0
         )
         lap["pitLaneUsed"] = any(int(sample.get("pit_status") or 0) > 0 for sample in lap["samples"])
-        lap.pop("_session_key", None)
-        if complete:
-            try: self._queue.put_nowait(copy.deepcopy(lap))
-            except queue.Full:
-                self._save_failed(overflow=True)
-                logging.error("Completed lap %s was not saved: lap writer queue is full", lap["lapNumber"])
-        self.current = None; self.last_distance = None
+        return complete

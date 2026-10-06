@@ -35,14 +35,15 @@ def _options(section, scenario, deployment_mode="boost"):
     actions = []
     if kind in ("acceleration", "flat_out"):
         actions.append(deployment_mode if deployment_mode in DEPLOYMENT_ACTIONS else "boost")
-    if scenario == "lift_and_deploy" and kind in ("lift", "acceleration", "flat_out"):
+    if scenario in ("lift_and_deploy", "qualifying") and kind in ("lift", "acceleration", "flat_out"):
         actions.extend(LIFT_ACTIONS)
     for action in actions:
         if not prediction_is_usable(section, action):
             continue
         source = section["actions"][action]
         confidence = _number(source.get("confidence"), 0.0)
-        if action == "overtake" and (source.get("evidence") != "observed" or confidence < .35):
+        calibrated_quali = scenario == "qualifying" and source.get("energy_method") == "measured_power_envelope"
+        if action == "overtake" and not calibrated_quali and (source.get("evidence") != "observed" or confidence < .35):
             continue
         if action in DEPLOYMENT_ACTIONS and (
                 _number(source.get("clipping_probability")) >= .5
@@ -71,7 +72,7 @@ def _simulate_none(model, start_soc, horizon):
 
 
 def _optimize_path(model, start_soc, target_soc, scenario, horizon=1, soc_step=.25,
-                   minimum_running_soc=0.0, deployment_mode="boost"):
+                   minimum_running_soc=0.0, deployment_mode="boost", closest_finish=False):
     sections = model["sections"]
     if start_soc < minimum_running_soc:
         return None
@@ -115,6 +116,8 @@ def _optimize_path(model, start_soc, target_soc, scenario, horizon=1, soc_step=.
             states = next_states
     tolerance = soc_step * .8
     feasible = [state for state in states.values() if abs(state["soc"] - target_soc) <= tolerance]
+    if not feasible and closest_finish:
+        return min(states.values(), key=lambda state: (abs(state["soc"] - target_soc), state["objective"]))
     pool = feasible or list(states.values())
     return min(pool, key=lambda state: state["objective"] + abs(state["soc"] - target_soc) * 2000.0)
 

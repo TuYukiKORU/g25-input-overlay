@@ -55,6 +55,45 @@ def replay(monkeypatch, packets, latest=None, recorder=None):
     return latest, receipts
 
 
+@pytest.mark.parametrize("wire", [2025, 2026])
+def test_flashback_udp_replay_splices_timing_and_drops_stale_energy(monkeypatch, wire):
+    from lap_recorder import LapRecorder
+    from test_recorder import MemoryStorage
+    store = MemoryStorage(); recorder = LapRecorder(store)
+    identity = session(wire, 13 if wire == 2026 else 0)
+    identity[29 + 6] = 15
+    packets = [identity]
+    def timing(distance, lap=1):
+        data = packet(wire, 2)
+        struct.pack_into("<f", data, 15, (lap - 1) * 42 + distance / 50)
+        struct.pack_into("<II", data, 29, 42000, distance * 20)
+        struct.pack_into("<f", data, 29 + 20, distance)
+        data[29 + 33] = lap
+        return data
+    def status():
+        data = packet(wire, 7)
+        struct.pack_into("<3f", data, 29 + 5, 25, 110, 10)
+        struct.pack_into("<2f", data, 29 + 33, 100000, 2800000)
+        return data
+    for distance in range(0, 1601, 5):
+        packets.extend([status(), timing(distance)])
+    packets.append(timing(903))  # First restored clock arrives before fresh status.
+    for distance in range(908, 2109, 5):
+        packets.extend([status(), timing(distance)])
+    packets.append(timing(0, 2))
+    replay(monkeypatch, packets, recorder=recorder)
+    assert recorder.flush() and len(store.laps) == 1
+    lap = store.laps[0]
+    assert lap["validLap"] and lap["rewindCount"] == 1
+    restored = next(row for row in lap["samples"] if row["lap_distance"] == 903)
+    assert restored["ers_store_energy_j"] is None
+    assert restored["ers_soc"] is None
+    assert restored["fuel_in_tank_kg"] is None
+    assert next(row for row in lap["samples"] if row["lap_distance"] == 908)["ers_soc"] == 70
+    from telemetry_quality import lap_quality
+    assert lap_quality(lap)["energy"]["available"]
+
+
 @pytest.mark.parametrize('wire,index', [(2025, 0), (2025, 21), (2026, 0), (2026, 23)])
 def test_all_used_packets_at_first_and_last_grid_slots(monkeypatch, wire, index):
     motion = packet(wire, 0, index)

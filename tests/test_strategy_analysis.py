@@ -57,10 +57,11 @@ def test_shared_model_and_qualifying_dp_produce_soc_allocation():
     assert value["ideal_lap"]["source_lap_count"] == 3
     result = analyze_qualifying(value, start_soc=None, minimum_finish_soc=5)
     assert result["general"]["analyzable"] is True
-    assert result["general"]["predicted_finish_soc"] >= 5
+    assert result["general"]["predicted_finish_soc"] >= 0
+    assert result["general"]["target_finish_soc"] == 0
     assert result["deployment_mode"] == "overtake"
     assert result["general"]["battery_before_runup_soc"] == 100
-    assert result["general"]["start_line_soc"] >= 80
+    assert result["general"]["start_line_soc"] == 100
     assert all(row["action"] != "boost" for row in result["general"]["allocations"])
     assert len(result["general"]["allocations"]) == len(value["sections"])
     assert result["personal"]["analyzable"] is True

@@ -3,6 +3,8 @@ let lap, analysis, reference, comparisonAnalysis, hoverDistance = null, knownLat
 let sessionAnalysis = null, selectedSection = null, analysisPollTimer = null, trackHitPoints = [];
 let lapsCache = [], selectedLapId = null, comparisonLapId = null;
 let chartZoom = null;
+let replaySelected = [], replayCompared = [], replayRange = null, replayTime = null;
+let replayPlaying = false, replayFrame = null, replayTick = null;
 let lapLoadVersion = 0;
 
 function distanceRange(end) { return chartZoom || {start: 0, end}; }
@@ -14,9 +16,81 @@ function zoomToSection(section) {
   hoverDistance = section ? (section.start_distance + section.end_distance) / 2 : null;
   if ($("zoomStatus")) $("zoomStatus").textContent = chartZoom ? `${Math.round(chartZoom.start)}–${Math.round(chartZoom.end)} m · charts and driving lines` : 'Full lap';
   if ($("resetZoom")) $("resetZoom").disabled = !chartZoom;
+  configureReplay();
   plot();
 }
 window.zoomAnalysisSection = zoomToSection;
+function pauseReplay() {
+  replayPlaying = false; replayTick = null;
+  if (replayFrame != null) cancelAnimationFrame(replayFrame);
+  replayFrame = null;
+  if ($('ghostPlay')) $('ghostPlay').textContent = 'Play';
+}
+function configureReplay() {
+  pauseReplay();
+  replaySelected = LapReplay.series(lap); replayCompared = LapReplay.series(reference);
+  replayRange = TelemetryMotion.hasDrivingPath(replaySelected) && TelemetryMotion.hasDrivingPath(replayCompared)
+    ? LapReplay.alignedRange(replaySelected, replayCompared, chartZoom?.start ?? 0) : null;
+  if (replayRange && chartZoom) {
+    const local = replaySelected.filter(s => s.lap_distance >= chartZoom.start && s.lap_distance <= chartZoom.end);
+    if (local.length < 2) replayRange = null;
+    else {
+      replayRange.end = Math.min(replayRange.end, Number(local.at(-1).lap_time_ms));
+      if (replayRange.end <= replayRange.start) replayRange = null;
+    }
+  }
+  $('ghostPlay').disabled = $('ghostTime').disabled = !replayRange;
+  $('ghostTime').setAttribute('aria-label', 'Elapsed time from shared start');
+  if (!replayRange) { replayTime = null; return; }
+  replayTime = replayRange.start;
+  $('ghostTime').min = 0; $('ghostTime').max = replayRange.end-replayRange.start;
+  $('ghostTime').value = 0;
+}
+function seekReplay(timeMs, syncCharts = true) {
+  if (!replayRange) return;
+  replayTime = Math.max(replayRange.start, Math.min(replayRange.end, timeMs));
+  $('ghostTime').value = replayTime-replayRange.start;
+  if (syncCharts) hoverDistance = LapReplay.atTime(replaySelected, replayTime)?.lap_distance ?? null;
+}
+function replayCars() {
+  return replayTime == null ? [null, null] : [LapReplay.atTime(replaySelected, replayTime), LapReplay.atTime(replayCompared, replayTime+replayRange.ghostOffset)];
+}
+function drawCar(ctx, xy, point, color, letter, width, height) {
+  if (!point) return;
+  const [x,y] = xy(point);
+  if (x < 10 || y < 10 || x > width-10 || y > height-10) return;
+  ctx.fillStyle=color;ctx.strokeStyle='#080b0e';ctx.lineWidth=3;
+  ctx.beginPath();ctx.arc(x,y,9,0,Math.PI*2);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#080b0e';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(letter,x,y);
+}
+function renderReplay() {
+  const [selected,ghost]=replayCars();
+  const elapsed=replayTime==null?null:replayTime-replayRange.start;
+  $('ghostClock').textContent = elapsed == null ? '—' : `${elapsed===0?'0:00.000':time(elapsed)} elapsed`;
+  $('ghostTime').setAttribute('aria-valuetext', elapsed == null ? 'Unavailable' : `${(elapsed/1000).toFixed(2)} seconds from the shared start position`);
+  $('ghostPositions').replaceChildren();
+  if (!replayRange) {
+    $('ghostNotice').textContent = !reference ? 'Select a different comparison lap to replay both cars.' : 'No shared recorded track position with usable telemetry in this view.';
+    return;
+  }
+  for (const [point,name,number,style] of [[selected,'Selected',lap.lapNumber,'selected-car'],[ghost,'Ghost',reference.lapNumber,'comparison-car']]) {
+    const row=document.createElement('div');row.className=style;
+    row.textContent=point?`${name} · Lap ${number} · ${Math.round(point.lap_distance).toLocaleString()} m${point.speed==null?'':` · ${Math.round(point.speed)} km/h`}`:`${name} · Position unavailable at this time`;
+    $('ghostPositions').append(row);
+  }
+  if (selected && ghost) {
+    const gap=Number(ghost.lap_distance)-Number(selected.lap_distance);
+    const outside=chartZoom&&(ghost.lap_distance<chartZoom.start||ghost.lap_distance>chartZoom.end);
+    $('ghostNotice').textContent=`Ghost ${Math.abs(gap)<.5?'alongside':`${Math.abs(gap).toFixed(1)} m ${gap>0?'ahead':'behind'} along the track`}${outside?' · Ghost outside zoom; see full track.':'.'} Both cars start at ${Math.round(replayRange.distance)} m and use the same elapsed time from there.`;
+  } else $('ghostNotice').textContent='Position unavailable across a gap in the recorded telemetry.';
+}
+function advanceReplay(timestamp) {
+  if (!replayPlaying || document.hidden) { pauseReplay(); return; }
+  if (replayTick != null) seekReplay(replayTime + (timestamp-replayTick)*Number($('ghostRate').value));
+  replayTick=timestamp;plot();
+  if (replayTime >= replayRange.end) { pauseReplay(); return; }
+  replayFrame=requestAnimationFrame(advanceReplay);
+}
 const TIME_AXIS_LEFT = 112, TIME_AXIS_RIGHT = 10, TIME_AXIS_TOP = 58, TIME_AXIS_BOTTOM = 28;
 const SELECTED_COLOR = "#40cfff", COMPARISON_COLOR = "#ff9f68";
 
@@ -77,11 +151,40 @@ function updateComparisonSummary() {
 }
 
 function canvas(id, draw) {
-  const element = $(id), rect = element.getBoundingClientRect(), ratio = devicePixelRatio || 1;
+  const element = $(id), rect = element.getBoundingClientRect();
+  const ratio = Math.max(devicePixelRatio || 1, id.endsWith('Chart') ? 2 : 1);
   if (!rect.width || !rect.height) return;
-  element.width = rect.width * ratio; element.height = rect.height * ratio;
-  const ctx = element.getContext("2d"); ctx.scale(ratio, ratio);
+  element.width = Math.ceil(rect.width * ratio); element.height = Math.ceil(rect.height * ratio);
+  const ctx = element.getContext("2d");
+  ctx.setTransform(element.width / rect.width, 0, 0, element.height / rect.height, 0, 0);
   draw(ctx, rect.width, rect.height);
+  if (hoverDistance == null) chartTooltip(id, []);
+}
+
+const chartTooltips = new Map();
+function chartTooltip(id, lines, x = 0, y = 0) {
+  let tooltip = chartTooltips.get(id);
+  if (!lines.length) { if (tooltip) tooltip.hidden = true; return; }
+  const chart = $(id);
+  if (!tooltip) {
+    tooltip = document.createElement('div'); tooltip.className = 'chart-tooltip';
+    tooltip.setAttribute('role', 'tooltip'); chart.parentElement.append(tooltip);
+    chartTooltips.set(id, tooltip);
+  }
+  const signature = JSON.stringify(lines);
+  if (tooltip.dataset.lines !== signature) {
+    tooltip.replaceChildren(...lines.map(line => {
+      const row = document.createElement('div'); row.textContent = line.text;
+      if (line.color) row.style.color = line.color;
+      return row;
+    }));
+    tooltip.dataset.lines = signature;
+  }
+  tooltip.hidden = false;
+  const width = chart.getBoundingClientRect().width, height = chart.getBoundingClientRect().height;
+  const boxX = x + tooltip.offsetWidth + 12 > width ? x - tooltip.offsetWidth - 12 : x + 12;
+  tooltip.style.left = `${chart.offsetLeft + Math.max(4, Math.min(width-tooltip.offsetWidth-4, boxX))}px`;
+  tooltip.style.top = `${chart.offsetTop + Math.max(4, Math.min(height-tooltip.offsetHeight-4, y))}px`;
 }
 
 function nearest(points, distance, field = "distance") {
@@ -127,7 +230,6 @@ function samplesWithAcceleration(value) {
 }
 
 function drawSpeedChart() {
-  $("speedChart").style.height = innerWidth <= 700 ? "300px" : "320px";
   canvas("speedChart", (ctx, width, height) => {
     const selected = graphSamples(lap).filter(point => Number.isFinite(Number(point.speed)));
     const fastest = graphSamples(reference).filter(point => Number.isFinite(Number(point.speed)));
@@ -139,7 +241,7 @@ function drawSpeedChart() {
     const range = distanceRange(end), span = Math.max(1, range.end - range.start);
     const xFor = distance => TIME_AXIS_LEFT + (Number(distance) - range.start) / span * graphWidth;
     const yFor = speed => height - TIME_AXIS_BOTTOM - Number(speed) / max * graphHeight;
-    ctx.font = "11px system-ui, sans-serif"; ctx.textBaseline = "middle";
+    ctx.font = "12px system-ui, sans-serif"; ctx.textBaseline = "middle";
     for (let value = 0; value <= max; value += step) {
       const y = yFor(value); ctx.strokeStyle = value === 0 ? "#56636b" : "#293137"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(TIME_AXIS_LEFT, y); ctx.lineTo(width - TIME_AXIS_RIGHT, y); ctx.stroke();
@@ -187,12 +289,7 @@ function drawSpeedChart() {
         hoverValues.push({label, color, speed: Math.round(Number(point.speed)), y: yFor(point.speed)});
       }
       if (hoverValues.length) {
-        const boxWidth = 136, lineHeight = 18, boxHeight = hoverValues.length * lineHeight + 8;
-        const boxX = x + boxWidth + 12 > width ? x - boxWidth - 12 : x + 12;
-        const anchorY = hoverValues[0].y, boxY = Math.max(TIME_AXIS_TOP, Math.min(height - TIME_AXIS_BOTTOM - boxHeight, anchorY - boxHeight / 2));
-        ctx.fillStyle = "rgba(8,11,14,.92)"; ctx.strokeStyle = "#56636b"; ctx.lineWidth = 1; ctx.fillRect(boxX, boxY, boxWidth, boxHeight); ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
-        ctx.font = "bold 11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-        hoverValues.forEach((value, index) => { ctx.fillStyle = value.color; ctx.fillText(`${value.label}: ${value.speed} km/h`, boxX + 8, boxY + 7 + lineHeight * (index + .5)); });
+        chartTooltip('speedChart', hoverValues.map(value => ({text:`${value.label}: ${value.speed} km/h`, color:value.color})), x, hoverValues[0].y);
       }
     }
   });
@@ -204,7 +301,7 @@ function drawDistanceGrid(ctx, width, height, end, left, right, top, bottom) {
   for (let index = 0; index <= 4; index++) {
     const distance = range.start + span * index / 4, x = xFor(distance);
     ctx.strokeStyle = "#293137"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, height - bottom); ctx.stroke();
-    ctx.fillStyle = "#aeb9bf"; ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = index === 0 ? "left" : index === 4 ? "right" : "center"; ctx.textBaseline = "bottom";
+    ctx.fillStyle = "#aeb9bf"; ctx.font = "12px system-ui, sans-serif"; ctx.textAlign = index === 0 ? "left" : index === 4 ? "right" : "center"; ctx.textBaseline = "bottom";
     ctx.fillText(distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${Math.round(distance)} m`, x, height - 4);
   }
   return xFor;
@@ -221,19 +318,15 @@ function drawMetricSeries(ctx, points, valueFor, xFor, yFor, color, dashed = fal
   ctx.stroke(); ctx.restore();
 }
 
-function drawMetricHover(ctx, width, x, top, bottomY, values, boxWidth = 190) {
+function drawMetricHover(id, ctx, x, top, bottomY, values) {
   ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottomY); ctx.stroke();
   if (!values.length) return;
-  const boxHeight = values.length * 20 + 10, boxX = x + boxWidth + 12 > width ? x - boxWidth - 12 : x + 12, boxY = top + 8;
-  ctx.fillStyle = "rgba(8,11,14,.94)"; ctx.strokeStyle = "#56636b"; ctx.fillRect(boxX, boxY, boxWidth, boxHeight); ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
-  ctx.font = "bold 11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-  values.forEach((value, index) => { ctx.fillStyle = index ? "#b9c2c6" : "#eef2f4"; ctx.fillText(value, boxX + 8, boxY + 15 + index * 20); });
+  chartTooltip(id, values.map(text => ({text})), x, top + 8);
 }
 
 function drawAccelerationChart() {
   const selectedSeries = samplesWithAcceleration(lap), comparisonSeries = samplesWithAcceleration(reference);
   $("accelerationNotice").hidden = !(selectedSeries.estimated || comparisonSeries.estimated);
-  $("accelerationChart").style.height = innerWidth <= 700 ? "250px" : "270px";
   canvas("accelerationChart", (ctx, width, height) => {
     const selected = selectedSeries.samples;
     const fastest = comparisonSeries.samples;
@@ -246,7 +339,7 @@ function drawAccelerationChart() {
     const maxG = Math.max(1, Math.ceil(Math.min(6, peak) * 2) / 2);
     const yFor = value => top + (maxG - Number(value)) / (maxG * 2) * graphHeight;
     const batteryYFor = value => height - bottom - Math.max(0, Math.min(100, Number(value))) / 100 * graphHeight;
-    ctx.font = "11px system-ui, sans-serif"; ctx.textBaseline = "middle";
+    ctx.font = "12px system-ui, sans-serif"; ctx.textBaseline = "middle";
     for (const value of [-maxG, -maxG / 2, 0, maxG / 2, maxG]) {
       const y = yFor(value); ctx.strokeStyle = value === 0 ? "#56636b" : "#293137"; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(width - right, y); ctx.stroke();
       ctx.fillStyle = "#aeb9bf"; ctx.textAlign = "right"; ctx.fillText(`${value > 0 ? "+" : ""}${value.toFixed(1)} G`, left - 6, y);
@@ -313,7 +406,7 @@ function drawAccelerationChart() {
     drawBatteryDifference();
     drawBatteryLine(comparisonBattery, true, .68);
     drawBatteryLine(selectedBattery);
-    ctx.font = "11px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.font = "12px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
     for (let value = 0; value <= 100; value += 25) {
       const y = batteryYFor(value); ctx.strokeStyle = "#8b7932"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(width - right, y); ctx.lineTo(width - right + 5, y); ctx.stroke();
@@ -331,20 +424,19 @@ function drawAccelerationChart() {
           if (point.ers_percent != null && Number.isFinite(Number(point.ers_percent))) values.push(`${owner} battery: ${Math.round(Number(point.ers_percent))}%`);
         }
       }
-      drawMetricHover(ctx, width, xFor(hoverDistance), top, height - bottom, values, 210);
+      drawMetricHover('accelerationChart', ctx, xFor(hoverDistance), top, height - bottom, values);
     }
   });
 }
 
 function drawInputChart() {
-  $("inputChart").style.height = innerWidth <= 700 ? "250px" : "270px";
   canvas("inputChart", (ctx, width, height) => {
     const selected = graphSamples(lap), fastest = graphSamples(reference);
     if (!selected.length) return;
     const all = [...selected, ...fastest], end = Math.max(...all.map(point => Number(point.lap_distance)), 1);
     const left = 52, right = 14, top = 15, bottom = TIME_AXIS_BOTTOM, graphHeight = height - top - bottom;
     const yFor = value => height - bottom - Number(value) / 100 * graphHeight;
-    ctx.font = "11px system-ui, sans-serif"; ctx.textBaseline = "middle";
+    ctx.font = "12px system-ui, sans-serif"; ctx.textBaseline = "middle";
     for (let value = 0; value <= 100; value += 25) {
       const y = yFor(value); ctx.strokeStyle = value === 0 ? "#56636b" : "#293137"; ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(width - right, y); ctx.stroke();
       ctx.fillStyle = "#aeb9bf"; ctx.textAlign = "right"; ctx.fillText(`${value}%`, left - 6, y);
@@ -361,88 +453,86 @@ function drawInputChart() {
         const point = nearest(points, hoverDistance, "lap_distance");
         if (point) values.push(`${owner}: T ${Math.round(inputPercent(point, "throttle"))}%  B ${Math.round(inputPercent(point, "brake"))}%`);
       }
-      drawMetricHover(ctx, width, xFor(hoverDistance), top, height - bottom, values, 196);
+      drawMetricHover('inputChart', ctx, xFor(hoverDistance), top, height - bottom, values);
     }
   });
 }
 
 function drawTrackMap() {
-  const positionSamples = value => graphSamples(value).filter(point =>
+  const validPosition = point =>
     point.position?.x != null && point.position?.z != null &&
-    Number.isFinite(Number(point.position.x)) && Number.isFinite(Number(point.position.z)));
-  const selected = positionSamples(lap), comparisonPositions = positionSamples(reference);
+    Number.isFinite(Number(point.position.x)) && Number.isFinite(Number(point.position.z));
+  const cleanedSelected = LapReplay.cleanPositions(lap?.samples || []);
+  const cleanedCompared = LapReplay.cleanPositions(reference?.samples || []);
+  const fullSelected = cleanedSelected.filter(validPosition);
+  const fullCompared = cleanedCompared.filter(validPosition);
+  const fullPositions = [...fullSelected, ...(TelemetryMotion.hasDrivingPath(fullCompared) ? fullCompared : [])];
+  const inView = point => !chartZoom || (point.lap_distance >= chartZoom.start && point.lap_distance <= chartZoom.end);
+  const selected = fullSelected.filter(inView), comparisonPositions = fullCompared.filter(inView);
   const selectedUsable = TelemetryMotion.hasDrivingPath(selected);
   const compared = TelemetryMotion.hasDrivingPath(comparisonPositions) ? comparisonPositions : [];
   trackHitPoints = [];
-  $("trackMapNotice").hidden = selectedUsable && (!reference || compared.length > 0);
+  $('trackOverviewPanel').hidden = !chartZoom || !TelemetryMotion.hasDrivingPath(fullSelected);
+  renderReplay();
+  const rejected = [...cleanedSelected, ...cleanedCompared].filter(s=>s._positionRejected).length;
+  $("trackMapNotice").hidden = selectedUsable && (!reference || compared.length > 0) && !rejected;
   $("trackMapNotice").textContent = selectedUsable
-    ? 'Comparison lap has no usable position data.'
+    ? compared.length || !reference ? `Skipped ${rejected} inconsistent recorded position sample${rejected===1?'':'s'}.` : 'Comparison lap has no usable position data.'
     : TelemetryMotion.hasDrivingPath(lap?.samples || [])
       ? 'No usable position data in the selected range.'
       : 'No usable position data was recorded for this lap. The racing line cannot be reconstructed.';
   $("trackMap").hidden = !selectedUsable;
   $("trackMapLegend").hidden = !selectedUsable;
   if (!selectedUsable) return;
-  $("trackMap").style.height = innerWidth <= 700 ? "280px" : "300px";
+  const rotate = LapReplay.frame(fullPositions);
+  const trace = (ctx, points, xy) => {
+    ctx.beginPath();
+    points.forEach((sample, index) => {
+      const [x,y]=xy(sample);
+      if(index&&LapReplay.continuous(points[index-1],sample))ctx.lineTo(x,y);else ctx.moveTo(x,y);
+    });
+  };
+  let zoomBounds = null;
   canvas("trackMap", (ctx, width, height) => {
     const base = selected;
     const all = [...selected, ...compared]; if (!selected.length) return;
-    const meanX = all.reduce((sum, sample) => sum + sample.position.x, 0) / all.length;
-    const meanZ = all.reduce((sum, sample) => sum + sample.position.z, 0) / all.length;
-    const covariance = all.reduce((value, sample) => {
-      const x = sample.position.x - meanX, z = sample.position.z - meanZ;
-      value.xx += x * x; value.zz += z * z; value.xz += x * z; return value;
-    }, {xx: 0, zz: 0, xz: 0});
-    const angle = .5 * Math.atan2(2 * covariance.xz, covariance.xx - covariance.zz);
-    const cos = Math.cos(angle), sin = Math.sin(angle);
-    const rotate = sample => {
-      const x = sample.position.x - meanX, z = sample.position.z - meanZ;
-      return [x * cos + z * sin, -x * sin + z * cos];
-    };
-    const rotated = all.map(rotate), xs = rotated.map(point => point[0]), zs = rotated.map(point => point[1]);
-    const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
-    const scale = Math.min((width - 56) / (maxX - minX || 1), (height - 50) / (maxZ - minZ || 1));
-    const ox = (width - (maxX - minX) * scale) / 2, oy = (height - (maxZ - minZ) * scale) / 2;
-    const xy = sample => { const [x, z] = rotate(sample); return [ox + (x - minX) * scale, oy + (z - minZ) * scale]; };
+    const projection = LapReplay.projection(all, rotate, width, height, 28);
+    const xy = projection.xy;
+    zoomBounds = projection.bounds;
     ctx.lineJoin = "round"; ctx.lineCap = "round";
-    ctx.strokeStyle = "#252c31"; ctx.lineWidth = 22; ctx.beginPath();
-    base.forEach((sample, index) => { const [x, y] = xy(sample); index ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
-    ctx.stroke(); ctx.strokeStyle = "#4b555c"; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.strokeStyle = COMPARISON_COLOR; ctx.lineWidth = 2; ctx.setLineDash([5, 4]); ctx.beginPath();
-    compared.forEach((sample, index) => { const [x, y] = xy(sample); index ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
-    ctx.stroke(); ctx.setLineDash([]);
-    ctx.lineWidth = 3; ctx.strokeStyle = SELECTED_COLOR;
-    for (let i = 1; i < selected.length; i++) {
-      const a = selected[i - 1], b = selected[i], [ax, ay] = xy(a), [bx, by] = xy(b);
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-    }
+    ctx.strokeStyle = "#4b555c"; ctx.lineWidth = 36; trace(ctx,base,xy);
+    ctx.stroke(); ctx.strokeStyle = "#252c31"; ctx.lineWidth = 32; ctx.stroke();
     trackHitPoints = selected.map(sample => { const [x, y] = xy(sample); return {x, y, distance: Number(sample.lap_distance)}; });
     if (selectedSection) {
-      ctx.strokeStyle = "#ff6b72"; ctx.lineWidth = 10;
+      ctx.strokeStyle = "#513238"; ctx.lineWidth = 32;
       for (let i = 1; i < selected.length; i++) {
         const a = selected[i - 1], b = selected[i];
+        if(!LapReplay.continuous(a,b))continue;
         if (Number(b.lap_distance) < selectedSection.start_distance || Number(a.lap_distance) > selectedSection.end_distance) continue;
         const [ax, ay] = xy(a), [bx, by] = xy(b); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
       }
     }
+    // Draw both driving lines over the road and section highlight. The dashed
+    // comparison remains visible even where it overlaps the selected line.
+    ctx.lineWidth = 1.25; ctx.strokeStyle = SELECTED_COLOR; trace(ctx,selected,xy);
+    ctx.stroke();
+    ctx.strokeStyle = COMPARISON_COLOR; ctx.setLineDash([4, 3]); trace(ctx,compared,xy);
+    ctx.stroke(); ctx.setLineDash([]);
     const seasonPack = isSeasonPack(lap);
-    const drawUsageRibbon = (isActive, color, offset) => {
-      ctx.strokeStyle = color; ctx.lineWidth = 4;
-      for (let index = 1; index < selected.length; index++) {
-        const a = selected[index - 1], b = selected[index];
-        if (!isActive(a) && !isActive(b)) continue;
-        const [ax, ay] = xy(a), [bx, by] = xy(b), length = Math.hypot(bx - ax, by - ay) || 1;
-        const nx = -(by - ay) / length, ny = (bx - ax) / length;
-        ctx.beginPath(); ctx.moveTo(ax + nx * offset, ay + ny * offset);
-        ctx.lineTo(bx + nx * offset, by + ny * offset); ctx.stroke();
+    const usageBand = (active, color, offset) => {
+      ctx.strokeStyle=color;ctx.lineWidth=2.5;
+      for(let i=1;i<selected.length;i++){
+        const a=selected[i-1],b=selected[i];
+        if(!LapReplay.continuous(a,b)||(!active(a)&&!active(b)))continue;
+        const [ax,ay]=xy(a),[bx,by]=xy(b),length=Math.hypot(bx-ax,by-ay);
+        if(length<.01)continue;
+        const nx=-(by-ay)/length,ny=(bx-ax)/length;
+        ctx.beginPath();ctx.moveTo(ax+nx*offset,ay+ny*offset);ctx.lineTo(bx+nx*offset,by+ny*offset);ctx.stroke();
       }
     };
-    const aeroActive = sample => seasonPack ? Boolean(sample.active_aero) : Number(sample.drs) > 0;
-    const boostActive = sample => seasonPack ? Number(sample.boost_active) > 0 && Number(sample.overtake_active) === 0 : Boolean(sample.ers_usage);
-    const overtakeActive = sample => seasonPack && Number(sample.overtake_active) > 0;
-    drawUsageRibbon(aeroActive, seasonPack ? "#ff4b8c" : "#52e08a", -7);
-    drawUsageRibbon(boostActive, "#ffd84d", 7);
-    if (seasonPack) drawUsageRibbon(overtakeActive, "#35a7ff", 7);
+    usageBand(s=>seasonPack?Boolean(s.active_aero):Number(s.drs)>0,seasonPack?'#ff4b8c':'#52e08a',-22);
+    usageBand(s=>seasonPack?Number(s.boost_active)>0&&Number(s.overtake_active)===0:Boolean(s.ers_usage),'#ffd84d',22);
+    if(seasonPack)usageBand(s=>Number(s.overtake_active)>0,'#35a7ff',22);
     const markerPosition = (distance, offset = 0) => {
       const index = selected.reduce((closest, sample, candidate) =>
         Math.abs(Number(sample.lap_distance) - Number(distance)) < Math.abs(Number(selected[closest].lap_distance) - Number(distance)) ? candidate : closest, 0);
@@ -487,12 +577,42 @@ function drawTrackMap() {
     ctx.strokeStyle = "#d8e0e4"; ctx.lineWidth = 1.5;
     ctx.strokeRect(flagLeft, flagTop, columns * cell, rows * cell);
     }
-    if (hoverDistance != null) {
+    if (replayRange) {
+      const [selectedCar, ghostCar] = replayCars();
+      // Draw ghost first so the selected car remains visible when alongside.
+      if (ghostCar && selectedCar && Math.hypot(...xy(ghostCar).map((v,i)=>v-xy(selectedCar)[i])) < 12) {
+        const [x,y]=xy(ghostCar);ctx.strokeStyle=COMPARISON_COLOR;ctx.lineWidth=4;
+        ctx.beginPath();ctx.arc(x,y,14,0,Math.PI*2);ctx.stroke();
+        ctx.fillStyle=COMPARISON_COLOR;ctx.font='bold 10px system-ui';ctx.textAlign='right';ctx.textBaseline='bottom';
+        ctx.fillText('G',x-10,y-12);
+      } else drawCar(ctx,xy,ghostCar,COMPARISON_COLOR,'G',width,height);
+      drawCar(ctx,xy,selectedCar,SELECTED_COLOR,'S',width,height);
+    } else if (hoverDistance != null) {
       const sample = nearest(selected, hoverDistance, "lap_distance"), [x, y] = xy(sample);
       ctx.fillStyle = "#fff"; ctx.strokeStyle = "#080b0e"; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
   });
+  if (!$('trackOverviewPanel').hidden && zoomBounds) {
+    canvas('trackOverview',(ctx,width,height)=>{
+      const projection=LapReplay.projection(fullPositions,rotate,width,height,12),xy=projection.xy;
+      const line=(points,color,dash=[],lineWidth=1)=>{ctx.strokeStyle=color;ctx.lineWidth=lineWidth;ctx.setLineDash(dash);
+        trace(ctx,points,xy);ctx.stroke();ctx.setLineDash([]);};
+      line(fullSelected,'#252c31',[],7);
+      line(fullSelected,SELECTED_COLOR);
+      if(TelemetryMotion.hasDrivingPath(fullCompared))line(fullCompared,COMPARISON_COLOR,[3,3]);
+      const [left,top]=projection.xyRotated([zoomBounds.minX,zoomBounds.minY]);
+      const [right,bottom]=projection.xyRotated([zoomBounds.maxX,zoomBounds.maxY]);
+      ctx.fillStyle='rgba(255,255,255,.12)';ctx.strokeStyle='#fff';ctx.lineWidth=1.5;
+      ctx.fillRect(left,top,right-left,bottom-top);ctx.strokeRect(left,top,right-left,bottom-top);
+      const [startX,startY]=xy(fullSelected[0]);ctx.fillStyle='#fff';ctx.fillRect(startX-2,startY-2,4,4);
+      const [selectedCar,ghostCar]=replayCars();
+      for(const [point,color,radius]of[[ghostCar,COMPARISON_COLOR,5],[selectedCar,SELECTED_COLOR,3]]){
+        if(!point)continue;const[x,y]=xy(point);ctx.fillStyle=color;ctx.strokeStyle='#080b0e';ctx.lineWidth=1;
+        ctx.beginPath();ctx.arc(x,y,radius,0,Math.PI*2);ctx.fill();ctx.stroke();
+      }
+    });
+  }
 }
 
 function plot() { drawSpeedChart(); drawTrackMap(); drawAccelerationChart(); drawInputChart(); }
@@ -561,13 +681,21 @@ function selectAnalysisSection(section) {
   $("sectionSelectionLabel").textContent = section ? `${section.name} selected · all charts linked` : "Select a row to highlight all graphs";
   document.querySelectorAll(".section-row[data-index]").forEach(row => row.classList.toggle("selected", Number(row.dataset.index) === section?.index));
   if (section) hoverDistance = (Number(section.start_distance) + Number(section.end_distance)) / 2;
+  const point=LapReplay.atDistance(replaySelected,hoverDistance);
+  if(point&&replayRange){pauseReplay();seekReplay(point.lap_time_ms,false);}
   plot();
 }
 
 function selectSectionAtDistance(distance) {
-  if (!sessionAnalysis?.sections?.length || distance == null) return;
-  const section = sessionAnalysis.sections.find(row => Number(row.start_distance) <= distance && distance < Number(row.end_distance));
+  if (distance == null) return;
+  const section = sessionAnalysis?.sections?.find(row => Number(row.start_distance) <= distance && distance < Number(row.end_distance));
   if (section) selectAnalysisSection(section);
+  else {
+    hoverDistance=distance;
+    const point=LapReplay.atDistance(replaySelected,distance);
+    if(point&&replayRange){pauseReplay();seekReplay(point.lap_time_ms,false);}
+    plot();
+  }
 }
 
 function renderSessionAnalysis(result) {
@@ -639,6 +767,7 @@ async function startSessionAnalysis(force = false) {
 }
 
 async function load(id) {
+  pauseReplay();
   const version = ++lapLoadVersion;
   selectedLapId = id;
   const [a, b] = await Promise.all([fetch(`/api/laps/${id}`), fetch(`/api/laps/${id}/analysis`)]);
@@ -662,10 +791,17 @@ async function load(id) {
   const aeroUsageLabel = $("aeroUsageLabel");
   aeroUsageLabel.textContent = isSeasonPack(lap) ? "Active Aero" : "DRS";
   aeroUsageLabel.className = `usage-key ${isSeasonPack(lap) ? "active-aero" : "drs"}`;
-  const mapAeroLabel = $("mapAeroLabel");
-  mapAeroLabel.textContent = isSeasonPack(lap) ? "Active Aero" : "DRS";
-  mapAeroLabel.className = isSeasonPack(lap) ? "active-aero-marker" : "drs-marker";
-  $("mapOvertakeLabel").hidden = !isSeasonPack(lap);
+  // Also clean up the legend when an existing server has cached the template.
+  $('trackMapLegend').querySelectorAll('#mapAeroLabel, #mapOvertakeLabel, .map-ers-marker').forEach(label => label.remove());
+  for(const [key,text,color,hidden] of [
+    ['aero',isSeasonPack(lap)?'Active Aero · selected':'DRS · selected',isSeasonPack(lap)?'#ff4b8c':'#52e08a',false],
+    ['boost',isSeasonPack(lap)?'ERS Boost · selected':'ERS · selected','#ffd84d',false],
+    ['overtake','ERS Overtake · selected','#35a7ff',!isSeasonPack(lap)]
+  ]){
+    let label=$('trackMapLegend').querySelector(`[data-map-usage="${key}"]`);
+    if(!label){label=document.createElement('span');label.dataset.mapUsage=key;$('trackMapLegend').append(label);}
+    label.textContent=text;label.style.color=color;label.hidden=hidden;
+  }
   $("boostUsageLabel").textContent = "ERS";
   $("overtakeUsageLabel").textContent = "ERS";
   $("overtakeUsageLabel").hidden = !isSeasonPack(lap);
@@ -681,9 +817,9 @@ async function load(id) {
 }
 
 function sessionLabel(session, items) {
-  const stamp = session.replace("_session-", " · ").replace("_", " ");
-  const tracks = [...new Set(items.map(item => item.trackName || `Track ${item.trackId}`))].join(", ");
-  return `${stamp} · ${tracks}`;
+  const activities = [...new Set(items.map(item => SessionContext.activityLabel(item)))].join(" / ");
+  return SessionContext.sessionLabel({id:session,sessionActivityName:activities,lapCount:items.length,
+    tracks:items.map(item=>({trackName:item.trackName,trackId:item.trackId}))});
 }
 
 function renderLapList() {
@@ -701,7 +837,7 @@ function renderLapList() {
     const current = item.id === selectedLapId, fastest = item.id === best?.id;
     const highlight = fastest ? "session-best-option" : current ? "current-lap-option" : "";
     const marker = `${fastest ? " · FASTEST LAP" : ""}${current ? " · SELECTED" : ""}`;
-    return `<option class="${highlight}" value="${item.id}">Lap ${item.lapNumber}${marker}  ·  ${tyre}${age}${pit}  ·  ${time(item.lapTimeMs)}  ·  ${item.validLap ? "VALID" : "INVALID"}</option>`;
+    return `<option class="${highlight}" value="${item.id}">Lap ${item.lapNumber}${marker}  ·  ${tyre}${age}${pit}  ·  ${time(item.lapTimeMs)}  ·  ${item.validLap ? "VALID" : "INVALID"}${window.SessionContext.rewindLabel(item)}</option>`;
   };
   $("lapSelect").innerHTML = items.map(option).join("");
   if (items.some(item => item.id === selectedLapId)) $("lapSelect").value = selectedLapId;
@@ -715,6 +851,7 @@ function renderLapList() {
 }
 
 async function setComparison(id, redraw = true) {
+  pauseReplay();
   comparisonLapId = id || null; reference = null; comparisonAnalysis = null;
   selectedSection = null; chartZoom = null;
   const requestedLap = selectedLapId, requestedComparison = comparisonLapId;
@@ -800,7 +937,8 @@ async function refreshLaps(initial = false) {
     const contextLap = groups[session]?.[0]; SessionContext.write(session, contextLap?.trackId);
     let target = selectedLapId && laps.find(item => item.id === selectedLapId && (item.session || "Legacy session") === session)?.id;
     if (!target) target = groups[session][0].id;
-    if (initial || isNew || !lap) {
+    const revised = lap && laps.find(item => item.id === selectedLapId)?.recordingRevision !== lap.recordingRevision;
+    if (initial || isNew || revised || !lap) {
       const loadId = isNew && (newest.session || "Legacy session") === session ? newest.id : target;
       if (initial || isNew) comparisonLapId = loadId;
       await load(loadId);
@@ -815,6 +953,14 @@ async function refreshLaps(initial = false) {
 }
 
 async function init() {
+  $('ghostPlay').onclick=()=>{
+    if(replayPlaying){pauseReplay();return;}
+    if(!replayRange)return;
+    if(replayTime>=replayRange.end)seekReplay(replayRange.start);
+    replayPlaying=true;replayTick=null;$('ghostPlay').textContent='Pause';
+    replayFrame=requestAnimationFrame(advanceReplay);
+  };
+  $('ghostTime').oninput=()=>{pauseReplay();if(replayRange)seekReplay(replayRange.start+Number($('ghostTime').value));plot();};
   $("resetZoom").onclick = () => zoomToSection(null);
   SessionContext.mount($("sessionSelect"), null);
   $("lapSelect").onchange = event => { comparisonLapId = event.target.value; load(event.target.value); };
@@ -841,7 +987,10 @@ async function init() {
       const rect = event.currentTarget.getBoundingClientRect(), end = Math.max(...samples.map(sample => Number(sample.lap_distance)), 1);
       const graphWidth = rect.width - left - right;
       const range = distanceRange(end);
-      hoverDistance = range.start + Math.max(0, Math.min(1, (event.clientX - rect.left - left) / graphWidth)) * (range.end - range.start); schedulePlot();
+      hoverDistance = range.start + Math.max(0, Math.min(1, (event.clientX - rect.left - left) / graphWidth)) * (range.end - range.start);
+      const point=LapReplay.atDistance(replaySelected,hoverDistance);
+      if(point&&replayRange){pauseReplay();seekReplay(point.lap_time_ms,false);}
+      schedulePlot();
     });
     $(id).addEventListener("mouseleave", () => { hoverDistance = null; schedulePlot(); });
   };
@@ -858,4 +1007,4 @@ async function init() {
   await refreshLaps(true); setInterval(() => refreshLaps(false), 3000);
 }
 init(); addEventListener("resize", schedulePlot);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshLaps(false); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) pauseReplay(); else refreshLaps(false); });

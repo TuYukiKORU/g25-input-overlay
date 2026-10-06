@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$Python = "python", [string]$Version = "0.3.3-strategy-preview")
+param([string]$Python = "python", [string]$Version = "0.4.0-preview")
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $projectRoot

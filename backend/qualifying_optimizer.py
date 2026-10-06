@@ -28,29 +28,30 @@ def _pre_start_runup(model, battery_before_runup_soc, minimum_start_line_soc, de
             "source_end_distance": section["end_distance"], "evidence": prediction.get("evidence")}
 
 
-def optimize_qualifying(model, start_soc=None, minimum_finish_soc=5, personal=False,
-                        deployment_mode="overtake", minimum_start_line_soc=80):
+def optimize_qualifying(model, start_soc=None, minimum_finish_soc=0, personal=False,
+                        deployment_mode="overtake", minimum_start_line_soc=100):
     if not model.get("analyzable"):
         return {"analyzable": False, "reason": model.get("reason")}
-    before = max(0, min(100, float(100 if start_soc is None else start_soc)))
-    line_min = max(0, min(100, float(minimum_start_line_soc)))
-    reserve = max(0, min(100, float(minimum_finish_soc)))
-    if before < max(line_min, reserve):
-        return {"analyzable": False, "reason": "Starting battery is below the requested timing-line or finish reserve."}
-    mode = "boost" if deployment_mode == "boost" else "overtake"
+    # Keep legacy arguments callable, but qualifying always uses these boundaries.
+    before, line_min, reserve = 100.0, 100.0, 0.0
+    mode = "overtake"
     runup = _pre_start_runup(model, before, line_min, mode)
     start = runup["predicted_start_line_soc"]
-    source = model
+    source = deepcopy(model)
+    calibrated_sections = []
+    for section in source["sections"]:
+        if section.get("qualifying_overtake"):
+            section["actions"]["overtake"] = section["qualifying_overtake"]
+            calibrated_sections.append(section["number"])
     if personal:
-        source = deepcopy(model)
         for section in source["sections"]:
             for action in section["actions"]:
                 section["actions"][action]["predicted_time_ms"] = _adjusted_time(section, action, True)
     baseline = sum(s["actions"]["none"]["predicted_time_ms"] for s in source["sections"])
-    path = _optimize_path(source, start, reserve, "lift_and_deploy", minimum_running_soc=reserve,
-                          deployment_mode=mode)
+    path = _optimize_path(source, start, reserve, "qualifying", minimum_running_soc=reserve,
+                          deployment_mode=mode, closest_finish=True)
     if path is None:
-        return {"analyzable": False, "reason": "The requested reserve cannot be maintained through the timed lap."}
+        return {"analyzable": False, "reason": "No nonnegative battery path is available for the timed lap."}
     result = _summarize_path(source, path, start, reserve, 1, baseline)
     lap = result["trajectory"][0]
     allocations = []
@@ -60,16 +61,21 @@ def optimize_qualifying(model, start_soc=None, minimum_finish_soc=5, personal=Fa
         allocation["soc_recovered"] = max(0, allocation["incremental_soc_delta"])
         allocations.append(allocation)
     result["allocations"] = allocations
+    target_reached = abs(result["finish_soc_error"]) <= .25
     return {"analyzable": True, **result, "strategy_type": "personal" if personal else "general",
             "deployment_mode": mode, "pre_start_runup": runup, "battery_before_runup_soc": before,
             "start_line_soc": start, "minimum_finish_soc": reserve, "baseline_lap_time_ms": round(baseline, 1),
             "estimated_improvement_ms": result["net_gain_vs_no_deployment_ms"],
             "recommended_sections": lap["allocations"], "current_lap_recommendation": lap,
             "soc_trace": lap["soc_trace"], "clipping_predictions": [],
+            "finish_target_reached": target_reached, "finish_soc_tolerance": .25,
+            "calibrated_overtake_sections": calibrated_sections,
+            "energy_estimation": ("Unrecorded Overtake energy uses the measured power envelope at matching speeds; availability and time gains remain estimates."
+                                  if calibrated_sections else None),
             "recommendation": "Estimated qualifying energy allocation; verify against the next recorded lap."}
 
 
-def analyze_qualifying(model, start_soc=None, minimum_finish_soc=5, minimum_start_line_soc=80):
+def analyze_qualifying(model, start_soc=None, minimum_finish_soc=0, minimum_start_line_soc=100):
     general = optimize_qualifying(model, start_soc, minimum_finish_soc, minimum_start_line_soc=minimum_start_line_soc)
     personal = (optimize_qualifying(model, start_soc, minimum_finish_soc, True,
                                     minimum_start_line_soc=minimum_start_line_soc)

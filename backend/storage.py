@@ -3,10 +3,21 @@ import json
 import os
 import hashlib
 import threading
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from track_names import track_name, track_slug
-from session_names import game_mode_name, session_type_name
+from session_names import game_mode_name, session_type_name, session_activity_name
+
+
+LAP_METADATA_KEYS = (
+    "packetFormat", "gameYear", "gameVersion", "udpMode", "sourcePacketFormat", "sourceGameYear",
+    "editionDetection", "udpConfigurationWarning", "sessionUid", "trackId", "sessionType", "totalLaps",
+    "lapNumber", "lapTimeMs", "validLap", "sampleCount", "createdAt", "setupId", "tyreCompound",
+    "tyreAgeLapsAtStart", "tyreAgeLapsAtEnd", "fuelInTankKgAtStart", "fuelInTankKgAtEnd",
+    "activeAeroUses", "ersUsageCount", "pitEntryCount", "pitLaneUsed", "note",
+    "rewindCount", "recordingRevision",
+)
 
 
 def _normalize_track_profile(value):
@@ -42,6 +53,8 @@ class LapStorage:
         self._session_uid = None
         self._session_key = None
         self._laps_cache = None
+        self._navigation_index = None
+        self._recording_paths = {}
 
     def _write(self, path, value):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -186,7 +199,7 @@ class LapStorage:
                 self.session_dir = self.root / f"{base.name}_{attempt:03d}"
                 attempt += 1
             self._session_uid = uid
-            self._session_key = (uid, track_id, metadata.get("sessionLinkIdentifier"))
+            self._session_key = (uid, track_id, metadata.get("sessionLinkIdentifier"), metadata.get("sessionType"))
             metadata = metadata.copy()
             metadata.setdefault("sessionUidHex", f"{int(uid):016x}" if uid is not None else None)
             metadata.setdefault("trackName", track_name(track_id) if track_id is not None else None)
@@ -197,7 +210,7 @@ class LapStorage:
     def _lap_directory(self, lap):
         uid = lap.get("sessionUid")
         track_id = lap.get("trackId")
-        session_key = (uid, track_id, lap.get("sessionLinkIdentifier"))
+        session_key = (uid, track_id, lap.get("sessionLinkIdentifier"), lap.get("sessionType"))
         if self.session_dir is None or session_key != self._session_key:
             self.start_session({"sessionUid": uid, "packetFormat": lap.get("packetFormat"),
                                 "gameYear": lap.get("gameYear"), "gameVersion": lap.get("gameVersion"),
@@ -247,14 +260,35 @@ class LapStorage:
                         "sessionLinkIdentifier"):
                 lap.pop(key, None)
             base = laps_dir / f"lap_{int(lap['lapNumber']):03d}.json"
-            path = base
+            recording_key = (str(laps_dir), lap.get("recordingId"))
+            revision_path = self._recording_paths.get(recording_key) if lap.get("recordingId") else None
+            path = revision_path or base
             attempt = 2
-            while path.exists():
+            while not revision_path and path.exists():
                 path = laps_dir / f"lap_{int(lap['lapNumber']):03d}_{attempt:03d}.json"
                 attempt += 1
+            if revision_path and path.exists():
+                old = json.loads(path.read_text(encoding="utf-8"))
+                self._write(track_dir / "rewind-revisions" /
+                            f"revision-{path.stem}-{old.get('recordingRevision', 1)}.json", old)
+                if old.get("note") and not lap.get("note"):
+                    lap["note"] = old["note"]
             self._write(path, lap)
+            if lap.get("recordingId"):
+                self._recording_paths[recording_key] = path
             self._laps_cache = None
-            if lap.get("validLap"):
+            if revision_path:
+                # A replayed lap can be slower or invalid. Rebuild the derived
+                # best rather than leaving the superseded result as reference.
+                candidates = [json.loads(p.read_text(encoding="utf-8")) for p in laps_dir.glob("lap_*.json")]
+                best = min((value for value in candidates if value.get("validLap")),
+                           key=lambda value: value["lapTimeMs"], default=None)
+                best_path = track_dir / "best_lap.json"
+                if best is not None:
+                    self._write(best_path, best)
+                else:
+                    best_path.unlink(missing_ok=True)
+            elif lap.get("validLap"):
                 best_path = track_dir / "best_lap.json"
                 try: best = json.loads(best_path.read_text(encoding="utf-8"))
                 except (OSError, ValueError): best = None
@@ -263,6 +297,35 @@ class LapStorage:
 
     def _lap_paths(self):
         return sorted(self.root.rglob("lap_*.json"), key=lambda p: p.stat().st_mtime, reverse=True) if self.root.exists() else []
+
+    def _load_navigation_index(self):
+        if self._navigation_index is None:
+            try:
+                value = json.loads((self.root / ".navigation-index.json").read_text(encoding="utf-8"))
+                entries = value.get("entries") if isinstance(value, dict) and value.get("version") == 1 else None
+                self._navigation_index = entries if isinstance(entries, dict) else {}
+            except (OSError, ValueError):
+                self._navigation_index = {}
+        return self._navigation_index
+
+    def _save_navigation_index(self, entries):
+        # This is a disposable cache. A read-only recording folder must still
+        # be usable, and independent app processes must not share a temp file.
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.root,
+                    prefix=".navigation-index-", suffix=".tmp", delete=False) as out:
+                temporary = Path(out.name)
+                json.dump({"version": 1, "entries": entries}, out, ensure_ascii=False, separators=(",", ":"))
+            os.replace(temporary, self.root / ".navigation-index.json")
+        except OSError:
+            pass
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def list_laps(self, refresh=False):
         with self._lock:
@@ -273,15 +336,32 @@ class LapStorage:
                     self._laps_cache = None
                     self._laps_cache_signature = signature
             if self._laps_cache is None:
-                result = []
+                previous = self._load_navigation_index()
+                result, updated = [], {}
                 for p in paths:
                     try:
-                        lap = json.loads(p.read_text(encoding="utf-8"))
-                        result.append({key: lap.get(key) for key in ("packetFormat", "gameYear", "gameVersion", "udpMode", "sourcePacketFormat", "sourceGameYear", "editionDetection", "udpConfigurationWarning", "sessionUid", "trackId", "sessionType", "totalLaps", "lapNumber", "lapTimeMs", "validLap", "sampleCount", "createdAt", "setupId", "tyreCompound", "tyreAgeLapsAtStart", "tyreAgeLapsAtEnd", "fuelInTankKgAtStart", "fuelInTankKgAtEnd", "activeAeroUses", "ersUsageCount", "pitEntryCount", "pitLaneUsed", "note")} | {"trackName": track_name(lap.get("trackId")), "session": p.relative_to(self.root).parts[0], "id": str(p.relative_to(self.root)).replace("\\", "/")})
+                        lap_id = p.relative_to(self.root).as_posix()
+                        stat = p.stat()
+                        file_signature = [stat.st_size, stat.st_mtime_ns]
+                        cached = previous.get(lap_id)
+                        metadata = cached.get("metadata") if isinstance(cached, dict) else None
+                        if (not isinstance(metadata, dict) or cached.get("signature") != file_signature
+                                or not all(key in metadata for key in LAP_METADATA_KEYS)):
+                            lap = json.loads(p.read_text(encoding="utf-8"))
+                            if not isinstance(lap, dict):
+                                continue
+                            metadata = {key: lap.get(key) for key in LAP_METADATA_KEYS}
+                        updated[lap_id] = {"signature": file_signature, "metadata": metadata}
+                        result.append(metadata | {"trackName": track_name(metadata.get("trackId")),
+                            "session": p.relative_to(self.root).parts[0], "id": lap_id})
                     except (OSError, ValueError):
                         continue
+                if updated != previous:
+                    self._save_navigation_index(updated)
+                self._navigation_index = updated
                 self._laps_cache = result
-            return [item.copy() for item in self._laps_cache]
+            return [item | {"sessionActivityName": session_activity_name(item.get("sessionType"))}
+                    for item in self._laps_cache]
 
     def load_lap(self, lap_id):
         path = (self.root / lap_id).resolve()
@@ -366,5 +446,15 @@ class LapStorage:
             track = session["tracks"].setdefault(key, {"trackId": lap.get("trackId"),
                                                         "trackName": lap["trackName"], "laps": []})
             track["laps"].append(lap)
-        return [session | {"tracks": list(session["tracks"].values())}
-                for session in sessions.values()]
+        result = []
+        for session in sessions.values():
+            tracks = list(session["tracks"].values())
+            # Older folders may contain several session types. Prefer lap evidence
+            # over the parent metadata and expose all types without moving files.
+            types = list(dict.fromkeys(lap["sessionType"] for track in tracks for lap in track["laps"]
+                                       if lap.get("sessionType") not in (None, 0)))
+            names = [session_activity_name(value) for value in types] or [
+                session_activity_name(session["sessionType"], session["gameMode"])]
+            result.append(session | {"tracks": tracks, "sessionTypes": types,
+                                    "sessionActivityName": " / ".join(names)})
+        return result

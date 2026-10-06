@@ -2,7 +2,90 @@
 
 このファイルには、F1テレメトリー分析ツールへ加えた主な変更を記録します。
 
+## 2026-10-06
+
+### 0.4.0-preview release
+
+- Package the accumulated local improvements: session classification and labels, Overtake qualifying allocation, Strategy map orientation, ERS practice experiments, flashback lap stitching, lap replay and map continuity, faster navigation and reduced receiver work.
+- Refresh bilingual offline manuals and include practice rules in the analysis fingerprint so later rule changes invalidate cached practice results.
+- Release checks: 270 Python tests, 11 replay tests, JavaScript syntax and dependency consistency passed. Windows Application Control blocked the rebuilt unsigned EXE's native launch check; document this verification gap in the release notes.
+
+### COTA position jump and map usage bands
+
+- COTA lap 19 begins with one inconsistent position: a 517 m displacement in 0.117 s while lap distance advances 7.5 m. Exclude isolated inconsistent coordinates from map/replay display, show an exclusion notice, and break paths at impossible jumps or recording gaps without editing the saved lap.
+- Place the selected lap's Active Aero/DRS and ERS usage bands outside the road, with 2.5 px bands and 1.25 px driving lines. Apply continuity checks to the road, driving lines, section highlights, overview and usage bands.
+- Validation: 11 focused replay tests passed; checked real COTA laps 16, 17 and 19 and the local browser map. Normal laps 16 and 17 retain all recorded positions.
+
+### Replay starts from a shared track position
+
+- Align both lap clocks at the earliest usable shared track distance. A zoomed section starts both cars at its entry distance with elapsed time reset to zero; preserve the recorded driving lines and let pace differences develop during playback.
+- Interpolate within nearby samples, skip unusable starting positions, and stop when either recording ends. Chart hover and scrubbing continue to follow the selected lap with the ghost's clock offset applied.
+- Validation: 8 focused replay tests passed. Checked real Singapore laps 21 and 15 in the browser at the full-lap start and at 340 m in the zoomed view, including scrubbing and playback.
+
+### Lower receiver load while racing
+
+- Move completion summaries and completeness checks onto the existing background lap writer. Hand off immutable captured samples instead of deeply copying the entire lap twice; finish-line rewinds copy only list containers before trimming and resuming.
+- Replay benchmark with real Singapore lap 3 and 60 timing updates per second: median timing update 0.017 ms; same-lap rewind 0.13 ms; finish-line rewind 29.29 → 0.21 ms; lap-completion receiver work 62.64 → 0.12 ms. Disk writes remain in the background. These are local recorder measurements, not game FPS measurements or total-app CPU claims.
+- Validation: 270 tests passed, including receiver progress while the writer is blocked and protection of queued samples/setup/rewind history during a replay. A real-lap replay remained battery-usable. Restarted the verified idle local recorder to apply the change.
+
+### Same-time lap ghost and zoom overview
+
+- Add play/pause, elapsed-time scrubbing and 0.25–2× playback for selected and comparison car positions on the same lap-start clock. Display each car's track distance and speed plus the ghost's lead or deficit in metres.
+- Loss-section zoom seeks into the selected interval; hovering distance charts also seeks the common clock. Stop at the end of the shared recorded interval and do not interpolate through missing position data or large telemetry gaps.
+- Keep map orientation based on the full track while zooming. Add a full-track overview with a white rectangle showing the detail viewport and both car positions, including a ghost outside the zoomed view.
+- Validation: 5 replay/projection tests and 268 Python tests passed. Checked real Singapore laps 21 and 15 in-browser, including playback, scrubbing, automatic stop, zoom reset and a 480px layout with no horizontal overflow. Applied to the local browser app.
+
+### Flashback lap stitching
+
+- Keep the recorded prefix when the game clock rewinds, remove the undone suffix, and continue with restored timing. Repeated rewinds produce one completed lap with strictly ordered samples and a recorded rewind count.
+- Undo invalidity only when its first occurrence lies in the discarded section. Missing prefixes remain incomplete; session changes and backward driving do not stitch unrelated data.
+- Keep one previous lap in memory for flashbacks across the finish line. Revise its existing saved entry, preserve the superseded JSON under `rewind-revisions/`, and rebuild the best-lap reference without counting another lap.
+- Clear readings from the undone timeline until new measurement packets arrive. Label stitched laps in Lap analysis and Strategy, including strategy source rows; normal battery-quality checks still apply.
+- Existing missing laps cannot be rebuilt from fragments the previous recorder never saved. Changes apply to future recordings in the local source app.
+- Validation: 268 tests passed, including both UDP layouts, repeated flashbacks, finish-line revision backups and best-lap updates. A replay of real Singapore lap 3 with an injected rewind saved one battery-usable lap accepted by practice selection. An actual game flashback still needs the next recording to verify.
+
+### Local browser startup improvement
+
+- Persist compact lap-navigation metadata in a disposable index. A fresh app instance validates file size and modification time and decodes only new or changed laps, rather than every telemetry sample in the archive.
+- Recover automatically from missing or damaged indexes; cache-write failures do not prevent read-only access. Lap saving and note edits still invalidate navigation metadata.
+- With 408 saved laps, cold hierarchy loading fell from 9.19 seconds to 0.53–0.55 seconds after creating the index. Full tests: 254 passed. Measurements cover navigation loading, not ERS calculation time.
+
+## 2026-10-05
+
+### Local ERS practice map
+
+- Add a Strategy practice goal with up to three numbered track targets, mode/control lap counts, entry-condition matching, observed battery-change spread, and a suggested next experiment.
+- Prioritize missing controls or mode observations before repeated comparisons; skip braking, short sections and high recorded slip. Change one section per lap, collect a matching control, and rebuild after recording.
+- Include slower compatible valid laps without the fastest-lap cap, support a single usable source lap, and exclude known race-length mismatches in practice mode. Missing activation flags never count as ERS off.
+- Practice priorities describe coverage gaps, not validated performance gains. No package rebuild or GitHub update.
+
 ## 2026-10-04
+
+### Local Strategy map correction
+
+- Remove the reversed Z projection that mirrored the Strategy track map. Match the coordinate handedness used by the other map screens; energy calculations are unchanged.
+
+### Local session labels
+
+- Session selectors use track name → session type → saved lap count → date/time → ID, with one shared formatter for Lap Analysis and the other screens.
+- Show Practice, Qualifying, Race and Time Attack (Time Trial) before the career/Grand Prix game mode across session selectors. Keep individual practice and qualifying stages and explicitly show unknown types.
+- Show the selected reference lap's recorded session type in Strategy, separately from the planning goal. Read older folders without rewriting recordings and display all stages in mixed folders.
+- Split new recordings when the session type changes, even if the game reuses session identifiers. Verified 243 tests; no GitHub update or package rebuild.
+
+### Local qualifying correction
+
+- Qualifying forces Overtake even for legacy Boost inputs and hides Boost in its legend.
+- When Overtake was not recorded, estimate additional consumption by integrating power headroom at matching speeds against the measured battery capacity. Keep these estimates separate from race actions and label them explicitly.
+- The selected Imola lap now plans 100% to approximately 0.03% instead of leaving 67.4%. Verified in the local browser; 239 tests pass. No GitHub update or package rebuild.
+
+### 0.3.4-battery-preview
+
+- Race starting battery now uses a selector with 0%, 10%, ... 100%; off-step workspace requests are rejected.
+- Qualifying always starts at 100% on the timing line and targets 0% at the finish. Custom battery controls are removed for qualifying, and legacy API inputs cannot change these boundaries.
+- Keep nonnegative battery paths. If the target is unreachable with recorded actions, show the closest feasible plan, its predicted finish and an explicit target-not-reached label.
+- 236 tests pass, including exact/unreachable qualifying endpoints and canonical API boundaries. Changes and the rebuilt Windows package remain local; native EXE validation is still limited by Windows Application Control.
+
+### 0.3.3-strategy-preview
 
 - Reconstructed the extra screens as one Strategy workspace with Track plan, race energy, scenario comparison and qualifying energy. Lap analysis keeps its charts and workflows; session reports and corner definitions sit under Tools.
 - Share condition-matched source laps, one model and cached background jobs across goals. Keep map, battery curve, section actions and selected comparison aligned; require explicit recalculation after settings change.

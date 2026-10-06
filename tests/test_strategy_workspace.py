@@ -10,10 +10,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from analysis_routes import create_analysis_blueprint
 from operation_sections import analyze_operation_sections
 from race_optimizer import optimize_race
+from qualifying_optimizer import optimize_qualifying
 from session_analysis import analyze_session
 from storage import LapStorage
-from strategy_model import build_strategy_model, _observation, _rows, _clip_threshold
-from strategy_scenarios import compare_strategy_scenarios, optimize_multi_lap_strategy
+from strategy_model import build_strategy_model, _observation, _rows, _clip_threshold, _qualifying_power_calibration, _qualifying_overtake
+from strategy_scenarios import compare_strategy_scenarios, optimize_multi_lap_strategy, _options
 from strategy_worker import StrategyWorker
 from telemetry_quality import lap_quality
 from test_strategy_analysis import strategy_lap, model
@@ -103,6 +104,80 @@ def test_reserve_is_never_silently_lowered_and_empty_battery_is_not_borrowed():
     assert not compare_strategy_scenarios(value, start_soc=5)["analyzable"]
 
 
+def test_qualifying_always_starts_full_and_targets_empty_with_honest_feasibility():
+    value = simple_model()
+    # Existing actions cannot consume a full battery in this lap.
+    plan = optimize_qualifying(value, start_soc=40, minimum_finish_soc=25, minimum_start_line_soc=80)
+    assert plan["analyzable"] and plan["start_soc"] == plan["start_line_soc"] == 100
+    assert plan["target_finish_soc"] == plan["minimum_finish_soc"] == 0
+    assert plan["predicted_finish_soc"] == 96
+    assert not plan["finish_target_reached"]
+    assert plan["pre_start_runup"]["predicted_soc_cost"] == 0
+    value["sections"][0]["actions"]["overtake"]["soc_delta"] = -100
+    exact = optimize_qualifying(value)
+    assert exact["finish_target_reached"] and exact["predicted_finish_soc"] == 0
+    assert all(row["soc"] >= 0 for row in exact["soc_trace"])
+
+
+def test_qualifying_does_not_borrow_battery_to_manufacture_the_empty_finish():
+    value = simple_model()
+    value["sections"][0]["actions"]["overtake"]["soc_delta"] = -101
+    plan = optimize_qualifying(value)
+    assert plan["predicted_finish_soc"] > 0 and not plan["finish_target_reached"]
+    assert all(row["action"] != "overtake" or row["applied_fraction"] < 1 for row in plan["allocations"])
+    assert all(row["soc"] >= 0 for row in plan["soc_trace"])
+
+
+def test_qualifying_ignores_a_legacy_boost_mode_request():
+    plan = optimize_qualifying(simple_model(), deployment_mode="boost")
+    assert plan["deployment_mode"] == plan["pre_start_runup"]["action"] == "overtake"
+    assert plan["predicted_finish_soc"] == 96
+    assert all(a["action"] != "boost" for a in plan["allocations"])
+
+
+def test_qualifying_calibration_integrates_power_headroom_without_assuming_capacity():
+    value = simple_model()
+    section = value["sections"][0]
+    inferred = dict(section["actions"]["overtake"], evidence="inferred", confidence=.2,
+                    clipping_probability=1, super_clipping_probability=1)
+    # Two seconds at a measured 100 kW versus an observed 300 kW envelope:
+    # 400 kJ extra energy is 10% of the measured 4 MJ battery.
+    items = [{"rows": [{"s": i * 100, "t": i * 200, "speed": 220, "throttle": 1,
+                         "brake": 0, "mguk": power, "soc": 50, "store_j": 2_000_000}
+                        for i in range(11)], "clip_threshold": 20_000}
+             for power in (100_000, 300_000)]
+    calibration = _qualifying_power_calibration(items)
+    prediction = _qualifying_overtake(section, inferred, section["actions"]["none"], items, calibration)
+    assert calibration["capacity_j"] == 4_000_000
+    # Median headroom across the two laps is 5% (one lap already at the envelope).
+    assert prediction["soc_cost"] == pytest.approx(5)
+    assert prediction["soc_delta"] == pytest.approx(-6)
+    assert prediction["clipping_probability"] == prediction["super_clipping_probability"] == 0
+    section["actions"]["overtake"] = inferred
+    section["qualifying_overtake"] = prediction
+    before = deepcopy(value)
+    plan = optimize_qualifying(value)
+    assert plan["predicted_finish_soc"] == 94
+    assert plan["energy_estimation"] and plan["calibrated_overtake_sections"] == [1]
+    assert value == before  # Race predictions retain their evidence and clipping gates.
+    assert not any(a == "overtake" for a, _, _ in _options(section, "deployment_only", "overtake"))
+    for item in items:
+        for row in item["rows"]:
+            row["store_j"] = None
+    assert _qualifying_power_calibration(items) is None
+
+
+def test_qualifying_calibration_preserves_observed_actions_and_speed_clipping():
+    value = simple_model()
+    section = value["sections"][0]
+    observed = section["actions"]["overtake"]
+    assert _qualifying_overtake(section, observed, section["actions"]["none"], [], {}) is None
+    section["qualifying_overtake"] = dict(observed, evidence="inferred", confidence=.2,
+                                         energy_method="measured_power_envelope", clipping_probability=.8)
+    plan = optimize_qualifying(value)
+    assert all(a["action"] != "overtake" for a in plan["allocations"])
+
+
 def test_endpoint_tolerance_excludes_unmatched_scenarios_from_the_ranking():
     value = simple_model()
     # Coarse action fractions cannot make every alternative hit this terminal reserve.
@@ -172,11 +247,27 @@ def test_shared_job_runs_caches_and_returns_one_plan_and_source_snapshot(workspa
     assert client.get(f"/api/sessions/{session}/strategy-context", query_string={"track_id": 11,"selected_lap_id": selected}).get_json()["readiness"]["ready"]
 
 
-@pytest.mark.parametrize("bad", [{"start_soc": float("nan")}, {"goal": "pits"}, {"selected_lap_id": "../other"}, ["bad"]])
+@pytest.mark.parametrize("bad", [{"start_soc": float("nan")}, {"goal": "race", "start_soc": 55}, {"goal": "pits"}, {"selected_lap_id": "../other"}, ["bad"]])
 def test_workspace_rejects_nonfinite_settings_and_foreign_lap_ids(workspace_api, bad):
     client, _, _, session = workspace_api
     body = {"track_id": 11, **bad} if isinstance(bad, dict) else bad
     assert client.post(f"/api/sessions/{session}/analysis/workspace", json=body).status_code == 400
+
+
+@pytest.mark.parametrize("kind", ["workspace", "qualifying"])
+def test_qualifying_api_canonicalizes_old_custom_battery_inputs(workspace_api, monkeypatch, kind):
+    client, _, worker, session = workspace_api
+    received = []
+    def start(kind, session_id, track_id, settings, force):
+        received.append(settings)
+        return {"analysis_id": "test", "state": "queued"}, True
+    monkeypatch.setattr(worker, "start", start)
+    response = client.post(f"/api/sessions/{session}/analysis/{kind}", json={
+        "track_id": 11, "goal": "qualifying", "start_soc": 35,
+        "minimum_soc": 20, "minimum_finish_soc": 30, "minimum_start_line_soc": 70})
+    assert response.status_code == 202
+    assert received[0]["start_soc"] == received[0]["minimum_start_line_soc"] == 100
+    assert received[0]["minimum_soc" if kind == "workspace" else "minimum_finish_soc"] == 0
 
 
 def test_old_links_preserve_context_and_two_workspace_navigation_is_served():

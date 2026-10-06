@@ -45,7 +45,7 @@ def package(version):
     dependency_notices(folder)
     shutil.copy2(ROOT / "docs" / "LAPTOP_TEST.md", folder / "START HERE.md")
     shutil.copy2(ROOT / "docs" / "LAPTOP_TEST_JA.md", folder / "はじめに.md")
-    for name in ("RELEASE_REVIEW.md", "リリース前レビュー_日本語.md"):
+    for name in ("RELEASE_REVIEW.md", "リリース前レビュー_日本語.md", "RELEASE_0.4.0.md"):
         if (ROOT / "docs" / name).exists():
             shutil.copy2(ROOT / "docs" / name, folder / name)
     for name in ("manual-en.html", "manual-ja.html", "PERFORMANCE.md", "performance-results.json"):
@@ -89,5 +89,5 @@ def package(version):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--version", default="0.3.3-strategy-preview")
+    parser.add_argument("--version", default="0.4.0-preview")
     package(parser.parse_args().version)

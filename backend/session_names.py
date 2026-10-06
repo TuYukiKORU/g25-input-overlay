@@ -29,3 +29,14 @@ def game_mode_name(value):
     if value is None:
         return "Unknown"
     return GAME_MODE_NAMES.get(value, f"Unknown Game Mode {value}")
+
+
+def session_activity_name(value, game_mode=None):
+    """Show the driving session before the surrounding career/Grand Prix mode."""
+    if value == 18 or (value in (None, 0) and game_mode == 5):
+        return "Time Attack (Time Trial)"
+    if value in range(10, 15):
+        return "Qualifying · " + session_type_name(value)
+    if value in SESSION_TYPE_NAMES and value != 0:
+        return session_type_name(value)
+    return "Unknown session" if value in (None, 0) else session_type_name(value)

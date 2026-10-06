@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);let hierarchy=[],result=null,selected=null,refreshTimer=null,mapGeometry=[];
 const kindOrder=["braking","lift","acceleration","flat_out"];
-function sessionLabel(session){const mode=session.gameModeName||session.sessionTypeName||"Session";return `${mode} · ${session.id}`}
+function sessionLabel(session){return SessionContext.sessionLabel(session)}
 function lapLabel(lap){const time=Number.isFinite(Number(lap.lapTimeMs))?formatTime(lap.lapTimeMs):"—";return `Lap ${lap.lapNumber} · ${time}${lap.validLap?"":" · INVALID"}`}
 function formatTime(ms){ms=Number(ms);if(!Number.isFinite(ms))return"—";const minutes=Math.floor(ms/60000),seconds=(ms%60000)/1000;return `${minutes}:${seconds.toFixed(3).padStart(6,"0")}`}
 function currentSession(){return hierarchy.find(value=>value.id===$("sessionSelect").value)}

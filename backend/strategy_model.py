@@ -6,6 +6,7 @@ from statistics import median
 from operation_sections import analyze_operation_sections, build_operation_library
 from telemetry_quality import number, select_strategy_laps, prediction_is_usable
 from comparison_context import conditions
+from strategy_learning import summarize_learning_evidence
 
 
 DEPLOYMENT_ACTIONS = ("boost", "overtake")
@@ -64,8 +65,11 @@ def _rows(lap):
             "accel": _number(sample.get("longitudinal_g")), "soc": soc,
             "fuel": _number(sample.get("fuel_in_tank_kg")),
             "mguk": _number(sample.get("ers_mguk_power")),
+            "store_j": _number(sample.get("ers_store_energy_j")),
             "boost": bool(sample.get("boost_active")),
             "overtake": bool(sample.get("overtake_active")),
+            "deployment_recorded": all(sample.get(key) in (0, 1, False, True)
+                                       for key in ("boost_active", "overtake_active")),
             "aero": bool(sample.get("active_aero") or sample.get("drs")),
             "slip": max((_number(value, 0.0) for value in slips.values()), default=0.0),
             "wear": _mean([_number(value) for value in wear.values()]),
@@ -143,6 +147,7 @@ def _observation(item, section):
         "lap_id": item["id"], "session": item["session"], "lap_number": item["lap"].get("lapNumber"),
         "action": deployment if deployment != "none" else lift_action,
         "deployment_action": deployment, "lift_action": lift_action, "lift_ratio": lift_ratio,
+        "deployment_recorded": all(row["deployment_recorded"] for row in local),
         "raw_time_ms": raw_time,
         "normalized_time_ms": raw_time * item["best_time"] / item["sample_elapsed_ms"],
         "soc_delta": ((end_soc - start_soc) if start_soc is not None and end_soc is not None else None),
@@ -235,6 +240,72 @@ def _fallback_lift(section, action, none):
     }, none)
 
 
+def _qualifying_power_calibration(items):
+    """Estimate a speed-dependent power ceiling from matching recorded laps."""
+    bins = defaultdict(list)
+    capacities = []
+    for item in items:
+        for row in item["rows"]:
+            if row["soc"] >= 5 and row.get("store_j") is not None and row["store_j"] > 0:
+                capacities.append(row["store_j"] * 100 / row["soc"])
+            if row["throttle"] >= .95 and row["brake"] < .05 and row["mguk"] is not None and row["mguk"] >= 0:
+                bins[int(row["speed"] // 20)].append(row["mguk"])
+    capacity = _median(capacities)
+    # No assumed capacity or power limit when the recordings cannot establish it.
+    if capacity is None or capacity <= 0 or len(capacities) < 10:
+        return None
+    envelope = {band: sorted(values)[int((len(values) - 1) * .9)]
+                for band, values in bins.items() if len(values) >= 5}
+    return {"capacity_j": capacity, "envelope": envelope}
+
+
+def _qualifying_overtake(section, prediction, none, items, calibration):
+    """Inferred extra deployment, integrating measured power headroom over time.
+
+    This is an upper observed power envelope, not an observed Overtake effect.
+    Existing observed actions and their clipping evidence remain authoritative.
+    """
+    if calibration is None or prediction.get("evidence") == "observed":
+        return None
+    costs, clipping, super_clipping = [], [], []
+    for item in items:
+        cost, covered_ms, powered_ms, clipped_ms, super_ms = 0., 0., 0., 0., 0.
+        threshold = item["clip_threshold"]
+        for before, after in zip(item["rows"], item["rows"][1:]):
+            start = max(section["start_distance"], before["s"])
+            end = min(section["end_distance"], after["s"])
+            dt = after["t"] - before["t"]
+            if end <= start or not 0 < dt <= 500 or after["s"] <= before["s"]:
+                continue
+            if before["throttle"] < .95 or before["brake"] >= .05:
+                continue
+            interval_ms = dt * (end - start) / (after["s"] - before["s"])
+            powered_ms += interval_ms
+            power = before["mguk"]
+            ceiling = calibration["envelope"].get(int(before["speed"] // 20))
+            if power is None or ceiling is None:
+                continue
+            covered_ms += interval_ms
+            ceiling = max(power, ceiling)
+            cost += (ceiling - power) * interval_ms / 1000 / calibration["capacity_j"] * 100
+            if threshold is not None and before["speed"] >= 180 and ceiling <= threshold:
+                clipped_ms += interval_ms
+                if ceiling <= threshold * .25:
+                    super_ms += interval_ms
+        if powered_ms > 0 and covered_ms / powered_ms >= .8:
+            costs.append(cost)
+            clipping.append(clipped_ms / covered_ms)
+            super_clipping.append(super_ms / covered_ms)
+    if len(costs) < 2 or _median(costs, 0) <= .01:
+        return None
+    calibrated = dict(prediction)
+    calibrated.update(soc_delta=round(none["soc_delta"] - _median(costs), 3),
+                      clipping_probability=round(_median(clipping), 3),
+                      super_clipping_probability=round(_median(super_clipping), 3),
+                      energy_method="measured_power_envelope", calibration_laps=len(costs))
+    return _complete_prediction(calibrated, none)
+
+
 def _action_prediction(observations, action, none_prediction=None):
     selected = [row for row in observations if row["action"] == action]
     if not selected:
@@ -263,10 +334,10 @@ def _action_prediction(observations, action, none_prediction=None):
 
 
 def build_strategy_model(lap_entries, selected_session_id=None, selected_lap_id=None, track_profile=None,
-                         pace_window_percent=8.0, max_laps=40):
+                         pace_window_percent=8.0, max_laps=40, learning=False):
     """Build one reusable statistical model for qualifying and race optimizers."""
     selected, selection = select_strategy_laps(lap_entries, selected_session_id, selected_lap_id,
-                                               pace_window_percent, max_laps)
+                                               pace_window_percent, max_laps, learning=learning)
     if selection.get("reason"):
         return {"analyzable": False, "reason": selection["reason"], "selection": selection}
     eligible = []
@@ -282,7 +353,7 @@ def build_strategy_model(lap_entries, selected_session_id=None, selected_lap_id=
         eligible.append({"id": lap_id, "session": str(lap_id).split("/", 1)[0],
                          "lap": lap, "lap_time": lap_time, "rows": rows})
     eligible.sort(key=lambda item: item["lap_time"])
-    if len(eligible) < 2:
+    if len(eligible) < (1 if learning else 2):
         return {"analyzable": False, "reason": "F1 26の比較可能な有効ラップが2周以上必要です"}
     all_eligible = list(eligible)
     best_time = eligible[0]["lap_time"]
@@ -290,6 +361,7 @@ def build_strategy_model(lap_entries, selected_session_id=None, selected_lap_id=
         item["best_time"] = best_time
         item["sample_elapsed_ms"] = max(1, item["rows"][-1]["t"] - item["rows"][0]["t"])
         item["clip_threshold"] = _clip_threshold(item["rows"])
+    qualifying_calibration = _qualifying_power_calibration(eligible)
     library = build_operation_library([(item["id"], item["lap"]) for item in eligible],
                                       pace_window_percent=pace_window_percent,
                                       max_laps=max_laps)
@@ -380,10 +452,14 @@ def build_strategy_model(lap_entries, selected_session_id=None, selected_lap_id=
         else:
             personal = {"status": "insufficient_samples", "samples": len(personal_rows)}
         model_section["actions"] = actions
+        if model_section["kind"] in ("acceleration", "flat_out"):
+            model_section["qualifying_overtake"] = _qualifying_overtake(
+                model_section, actions["overtake"], none, eligible, qualifying_calibration)
         for action in ACTIONS:
             actions[action]["usable_for_plan"] = prediction_is_usable(model_section, action)
         model_section["personal"] = personal
         model_section["observation_count"] = len(observations)
+        model_section["learning_evidence"] = summarize_learning_evidence(observations)
         sections.append(model_section)
         all_observations.extend(observations)
         session_observations = [value for item in all_eligible if item["session"] == selected_session_id
@@ -442,6 +518,7 @@ def build_strategy_model(lap_entries, selected_session_id=None, selected_lap_id=
                    "pace_window_percent": pace_window_percent,
                    "lap_ids": [item["id"] for item in eligible],
                    "laps": [{"id": item["id"], "lap_number": item["lap"].get("lapNumber"),
+                             "rewindCount": item["lap"].get("rewindCount", 0),
                              "lap_time_ms": item["lap_time"], "conditions": conditions(item["lap"])} for item in eligible]},
         "personal": {"status": "available" if personal_available else "insufficient_samples",
                      "available_sections": personal_available, "selected_session": selected_session_id},

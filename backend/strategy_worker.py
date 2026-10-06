@@ -32,6 +32,7 @@ class StrategyWorker:
                  "created": lap.get("createdAt")}
                 for lap in self.storage.list_laps() if str(lap.get("trackId")) == str(track_id)]
         payload = {"schema": 5, "model": "condition-matched-section-actions-v5", "kind": kind,
+                   "learning_version": 2,
                    "source_signature": signature,
                    "session": session_id, "track": str(track_id), "settings": settings, "laps": laps}
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -90,7 +91,8 @@ class StrategyWorker:
                         entries.append((metadata["id"], lap))
                 self._set(key, progress=25, current="共通セクション予測モデルを作成中")
                 model_key = (signature, session_id, str(track_id), settings.get("selected_lap_id"),
-                             settings.get("pace_window_percent", 8), settings.get("max_laps", 40))
+                             settings.get("pace_window_percent", 8), settings.get("max_laps", 40),
+                             settings.get("goal") == "practice")
                 model = self._models.get(model_key)
                 if model is None:
                     model = build_strategy_model(
@@ -98,7 +100,7 @@ class StrategyWorker:
                         selected_lap_id=settings.get("selected_lap_id"),
                         track_profile=self.storage.load_track_profile(track_id),
                         pace_window_percent=settings.get("pace_window_percent", 8),
-                        max_laps=settings.get("max_laps", 40))
+                        max_laps=settings.get("max_laps", 40), learning=settings.get("goal") == "practice")
                     if len(self._models) >= 4:
                         self._models.pop(next(iter(self._models)))
                     self._models[model_key] = model

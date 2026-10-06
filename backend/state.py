@@ -4,6 +4,7 @@ import copy
 DEFAULT_TELEMETRY_STATE = {
     "speed": 0, "throttle_raw": 0.0, "brake_raw": 0.0,
     "current_lap_time_ms": 0,
+    "lap_packet_session_time": None,
     "last_lap_time_ms": 0, "lap_number": 0, "lap_distance": None,
     "total_laps": None,
     "world_position_x": None, "world_position_y": None, "world_position_z": None,
